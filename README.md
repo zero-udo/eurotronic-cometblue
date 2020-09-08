@@ -56,7 +56,8 @@ The following methods are available:
 | `set_manual_mode` | `boolean` - `True` if manual mode should be used. `False` if the schedule should be used                                                                                                                                                                                                                      | None                                                                                                                                                                                    |
 | `get_multiple`    | Retrieves multiple values specified in a `list`. Valid values are: <ul><li>'temperature'</li><li>'battery'</li><li>'datetime'</li><li>'holiday#' # = 1-8 or</li><li>'holidays' (retrieves holiday1-8)</li><li>'monday'</li><li>'tuesday'</li><li>etc...</li><li>'weekdays' (retrieves all weekdays)</li></ul> | The values as a `dict` in the format defined by the appropriate methods                                                                                                                 |
 | `discover`        | timeout: `int`, timeout used for discovery                                                                                                                                                                                                                                                                    | MAC-addresses of all discovery Comet Blue devices                                                                                                                                       |
- :warning: the device applys set values when the connection is closed, not directly after setting them
+
+:warning: the device applys set values when the connection is closed, not directly after setting them
 
 ## Examples
 
