@@ -85,7 +85,7 @@ profile_default/
 ipython_config.py
 
 # PyCharm
-.idea/
+.idea
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
@@ -156,3 +156,4 @@ pyvenv.cfg
 .venv
 pip-selfcheck.json
 
+/.scannerwork/
