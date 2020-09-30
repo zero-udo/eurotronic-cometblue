@@ -94,7 +94,7 @@ class CometBlue:
         return bytearray(pin.to_bytes(4, 'little', signed=False))
 
     @staticmethod
-    def __to_time_str(value: int) -> object:
+    def __to_time_str(value: int) -> str:
         """
 
         :param value:

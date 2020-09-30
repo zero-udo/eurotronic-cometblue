@@ -8,7 +8,7 @@ with open("requirements.txt", "r") as fh:
 
 setuptools.setup(
     name="eurotronic-cometblue",
-    version="1.0.0",
+    version="1.0.1",
     author="Johanens Rottler",
     author_email="johannes@rottler.me",
     description="Allows you to access Eurotronics GmbH BLE Comet Blue Radiator Controller",
@@ -18,11 +18,11 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     license='MIT',
     classifiers=[
-        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.6",
         "License :: OSI Approved :: MIT License",
         "Operating System :: POSIX :: Linux",
         "Development Status :: 5 - Production/Stable",
     ],
     install_requires=requirements,
-    python_requires='>=3.5',
+    python_requires='>=3.6',
 )
