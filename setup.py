@@ -11,7 +11,7 @@ setuptools.setup(
     version="1.0.1",
     author="Johanens Rottler",
     author_email="johannes@rottler.me",
-    description="Allows you to access Eurotronics GmbH BLE Comet Blue Radiator Controller",
+    description="Allows you to access Eurotronic GmbH BLE Comet Blue Radiator Controller",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/zero-udo/eurotronic-cometblue",

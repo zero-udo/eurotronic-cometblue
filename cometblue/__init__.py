@@ -7,7 +7,7 @@ from uuid import UUID
 from pygatt import BLEDevice, GATTToolBackend, BLEError
 from pygatt.backends.backend import BLEBackend
 
-import const
+from . import const
 
 MAC_REGEX = re.compile('([0-9A-F]{2}:){5}[0-9A-F]{2}')
 
@@ -207,7 +207,7 @@ class CometBlue:
 
     def __transform_weekday_response(self, value: bytearray) -> dict:
         """
-        Transforms a weekday responce to a dictionary containing all four start and end times.
+        Transforms a weekday response to a dictionary containing all four start and end times.
         :param value: bytearray retrieved from the device
         :return: dict containing start1-4 and end1-4 times
         """
@@ -330,7 +330,7 @@ class CometBlue:
                 self.connected = True
             except BLEError:
                 timeout += 2
-                timeout = min(timeout, 2*self.timeout)
+                timeout = min(timeout, 2 * self.timeout)
 
     def disconnect(self):
         """
@@ -463,7 +463,7 @@ class CometBlue:
 
     def get_multiple(self, values: List[str]) -> dict:
         """
-        Retrieve multiple information at once. More performant than calling them by themselfes - only one connection is
+        Retrieve multiple information at once. More performant than calling them by themselves - only one connection is
         used.
         :param values: List of information to be retrieved. Valid entries are ['temperature', 'battery', 'datetime',
         'holiday#' # = 1-8 or 'holidays' (retrieves holiday1-8), 'monday', 'tuesday', etc..., 'weekdays' (retrieves all
@@ -479,7 +479,7 @@ class CometBlue:
             "temperature": self.get_temperature(),
             "battery": self.get_battery(),
             "datetime": self.get_datetime(),
-            "holidays": map(lambda x: {str.format("holiday{}", x): self.get_holiday(x)}, range(1, 9)),
+            "holidays": map(lambda day: {str.format("holiday{}", day): self.get_holiday(day)}, range(1, 9)),
             "holiday1": self.get_holiday(1),
             "holiday2": self.get_holiday(2),
             "holiday3": self.get_holiday(3),
@@ -510,8 +510,14 @@ class CometBlue:
             if callable(tmp):
                 result[v] = tmp()
             else:
-                for x in tmp:
-                    result[x] = tmp[x]()
+                if isinstance(tmp, list):
+                    for x in tmp:
+                        if callable(tmp[x]):
+                            result[x] = tmp[x]()
+                        else:
+                            result[x] = tmp[x]
+                else:
+                    result[v] = tmp
 
         return result
 
@@ -524,7 +530,7 @@ class CometBlue:
 
     def discover(self, timeout=5) -> list:
         self.adapter.start()
-        devices = self.adapter.scan()
+        devices = self.adapter.scan(timeout)
         blues = list(filter(lambda x: const.SERVICE in x.metadata["uuids"], devices))
         macs = list(map(lambda x: x.address, blues))
         return macs

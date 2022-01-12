@@ -1,8 +1,10 @@
 # CometBlue
 
-CometBlue is a library to communicate with your Eurotronic GmbH Comet Blue radiator controllers.
+eurotronic-cometblue is a library to communicate with your Eurotronic GmbH Comet Blue radiator controllers.
 
-The device supports up to four programmable schedules for each weekday. Longer periods can be set as holidays. There are 8 holiday slots available. 
+The device supports up to four programmable schedules for each weekday. Longer periods can be set as holidays. There are 8 holiday slots available.
+
+This library depends on [pygatt\[GATTTOOL\]](https://github.com/peplin/pygatt) and the BlueZ-Stack, which requires Linux.
 
 ## Compatible devices
 
@@ -18,6 +20,12 @@ Comet Blue radiator controllers are sold under different names:
 This library should work with all listed radiator controllers, but is only tested with a Sygonix HT100BT which is the only one I own.
 
 If your device is not listed here but looks similar (or you know it is a rebranded Comet Blue), or if you are able to test this library with another device - let me know your results.
+## Installation
+
+Just 
+```
+pip install eurotronic-cometblue
+```
 
 ## Usage
 
@@ -57,7 +65,7 @@ The following methods are available:
 | `get_multiple`    | Retrieves multiple values specified in a `list`. Valid values are: <ul><li>'temperature'</li><li>'battery'</li><li>'datetime'</li><li>'holiday#' # = 1-8 or</li><li>'holidays' (retrieves holiday1-8)</li><li>'monday'</li><li>'tuesday'</li><li>etc...</li><li>'weekdays' (retrieves all weekdays)</li></ul> | The values as a `dict` in the format defined by the appropriate methods                                                                                                                 |
 | `discover`        | timeout: `int`, timeout used for discovery                                                                                                                                                                                                                                                                    | MAC-addresses of all discovery Comet Blue devices                                                                                                                                       |
 
-:warning: the device applys set values when the connection is closed, not directly after setting them
+:warning: the device applies set values when the connection is closed, not directly after setting them
 
 ## Examples
 

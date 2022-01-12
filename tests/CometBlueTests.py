@@ -78,3 +78,8 @@ class CometBlueTest(unittest.TestCase):
         devices = blue.discover(30)
         print(devices)
         self.assertGreater(len(devices), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()
+
