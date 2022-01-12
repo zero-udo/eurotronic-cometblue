@@ -3,12 +3,9 @@ import setuptools
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-with open("requirements.txt", "r") as fh:
-    requirements = fh.read()
-
 setuptools.setup(
     name="eurotronic-cometblue",
-    version="1.0.1",
+    version="1.0.2",
     author="Johanens Rottler",
     author_email="johannes@rottler.me",
     description="Allows you to access Eurotronic GmbH BLE Comet Blue Radiator Controller",
@@ -23,6 +20,6 @@ setuptools.setup(
         "Operating System :: POSIX :: Linux",
         "Development Status :: 5 - Production/Stable",
     ],
-    install_requires=requirements,
+    install_requires="pygatt[GATTTOOL]==4.0.5",
     python_requires='>=3.6',
 )
