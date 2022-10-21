@@ -1,15 +1,18 @@
+import asyncio
+import platform
 import re
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List
 from uuid import UUID
 
-from pygatt import BLEDevice, GATTToolBackend, BLEError
-from pygatt.backends.backend import BLEBackend
+from bleak import BleakClient, BleakScanner
+from bleak.exc import BleakError
 
 from . import const
 
 MAC_REGEX = re.compile('([0-9A-F]{2}:){5}[0-9A-F]{2}')
+UUID_REGEX = re.compile('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
 
 
 class Weekday(Enum):
@@ -44,37 +47,37 @@ HOLIDAY = {
 }
 
 
-class CometBlue:
-    adapter: BLEBackend
+class AsyncCometBlue:
     mac: str
     connected: bool
     pin: bytearray
     timeout: int
-    client: BLEDevice
+    client: BleakClient
 
     def __init__(self, mac: str, pin=0, timeout=2):
         self.mac = mac
-        if bool(MAC_REGEX.match(mac)) is False:
+        if bool(MAC_REGEX.match(mac)) is False and platform.system() != "Darwin":
             raise ValueError("mac must be a valid Bluetooth Address in the format XX:XX:XX:XX:XX:XX.")
+        if bool(UUID_REGEX.match(mac)) is False and platform.system() == "Darwin":
+            raise ValueError("mac must be a valid UUID in the format XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX.")
         if 0 > pin >= 100000000:
             raise ValueError("pin can only consist of digits. Up to 8 digits allowed.")
 
         self.pin = self.transform_pin(pin)
         self.timeout = timeout
         self.connected = False
-        self.adapter = GATTToolBackend()
 
-    def __read_value(self, characteristic: UUID) -> bytearray:
+    async def __read_value(self, characteristic: UUID) -> bytearray:
         """
         Reads a characteristic and provides the data as a bytearray. Disconnects afterwards.
 
         :param characteristic: UUID of the characteristic to read
         :return: bytearray containing the read values
         """
-        value = self.client.char_read(characteristic)
+        value = await self.client.read_gatt_char(characteristic)
         return value
 
-    def __write_value(self, characteristic: UUID, new_value: bytearray):
+    async def __write_value(self, characteristic: UUID, new_value: bytearray):
         """
         Writes a bytearray to the specified characteristic. Disconnects afterwards to apply written changes.
 
@@ -82,7 +85,7 @@ class CometBlue:
         :param new_value: bytearray containing the new values
         :return:
         """
-        self.client.char_write(characteristic, new_value)
+        await self.client.write_gatt_char(characteristic, new_value, response=True)
 
     @staticmethod
     def transform_pin(pin: int):
@@ -267,14 +270,16 @@ class CometBlue:
         malformed
         """
         # validate values
-        if values[3] not in range(0, 100) or \
-                values[2] not in range(1, 13) or \
-                values[1] not in range(1, 31) or \
-                values[0] not in range(0, 25) or \
-                values[7] not in range(0, 100) or \
-                values[6] not in range(1, 13) or \
-                values[5] not in range(1, 31) or \
-                values[4] not in range(0, 25):
+        if (
+            values[3] not in range(0, 100)
+            or values[2] not in range(1, 13)
+            or values[1] not in range(1, 31)
+            or values[0] not in range(0, 25)
+            or values[7] not in range(0, 100)
+            or values[6] not in range(1, 13)
+            or values[5] not in range(1, 31)
+            or values[4] not in range(0, 25)
+        ):
             return dict()
 
         start = datetime(values[3] + 2000, values[2], values[1], values[0])
@@ -292,7 +297,11 @@ class CometBlue:
         :param values: dictionary containing start: datetime, end: datetime, temperature: float
         :return: bytearray to be transferred to the device
         """
-        if not values.__contains__("start") or not values.__contains__("end") or not values.__contains__("temperature"):
+        if (
+            not values.__contains__("start")
+            or not values.__contains__("end")
+            or not values.__contains__("temperature")
+        ):
             print("Nope")
             return bytearray(9)
 
@@ -314,7 +323,7 @@ class CometBlue:
 
         return new_value
 
-    def connect(self):
+    async def connect(self):
         """
         Connects to the device. Increases connection-timeout if connection could not be established up to twice the
         initial timeout. Max 10 retries if.
@@ -324,33 +333,32 @@ class CometBlue:
         tries = 0
         while not self.connected and tries < 10:
             try:
-                self.adapter.start()
-                self.client = self.adapter.connect(self.mac, timeout=timeout)
-                self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
+                self.client = BleakClient(self.mac)
+                await self.client.connect()
+                await self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
                 self.connected = True
-            except BLEError:
+            except BleakError:
                 timeout += 2
                 timeout = min(timeout, 2 * self.timeout)
 
-    def disconnect(self):
+    async def disconnect(self):
         """
         Disconnects the device.
         :return:
         """
         if self.connected:
-            self.client.disconnect()
-            self.adapter.stop()
+            await self.client.disconnect()
             self.connected = False
 
-    def get_temperature(self) -> dict:
+    async def get_temperature(self) -> dict:
         """Retrieves the temperature configurations from the device.
 
         :return: dict of the retrieved values
         """
-        value = self.__read_value(const.CHARACTERISTIC_TEMPERATURE)
+        value = await self.__read_value(const.CHARACTERISTIC_TEMPERATURE)
         return self.__transform_temperature_response(value)
 
-    def set_temperature(self, values: Dict[str, float]):
+    async def set_temperature(self, values: Dict[str, float]):
         """Sets the time from the device.
         Allowed values for updates are:
            - manualTemp: temperature for the manual mode
@@ -366,35 +374,35 @@ class CometBlue:
             return
 
         new_value = self.__transform_temperature_request(values)
-        self.__write_value(const.CHARACTERISTIC_TEMPERATURE, new_value)
+        await self.__write_value(const.CHARACTERISTIC_TEMPERATURE, new_value)
 
-    def get_battery(self):
+    async def get_battery(self):
         """
         Retrieves the battery level in percent from the device
 
         :return: battery level in percent
         """
-        return self.__read_value(const.CHARACTERISTIC_BATTERY)[0]
+        return (await self.__read_value(const.CHARACTERISTIC_BATTERY))[0]
 
-    def get_datetime(self) -> datetime:
+    async def get_datetime(self) -> datetime:
         """
         Retrieve the current set date and time of the device - used for schedules
 
         :return: the retrieved datetime
         """
-        result = self.__read_value(const.CHARACTERISTIC_DATETIME)
+        result = await self.__read_value(const.CHARACTERISTIC_DATETIME)
         return self.__transform_datetime_response(result)
 
-    def set_datetime(self, date: datetime = datetime.now()):
+    async def set_datetime(self, date: datetime = datetime.now()):
         """
         Sets the date and time of the device - used for schedules
 
         :param date: a datetime object, defaults to now
         """
         new_value = self.__transform_datetime_request(date)
-        self.__write_value(const.CHARACTERISTIC_DATETIME, new_value)
+        await self.__write_value(const.CHARACTERISTIC_DATETIME, new_value)
 
-    def get_weekday(self, weekday: Weekday) -> dict:
+    async def get_weekday(self, weekday: Weekday) -> dict:
 
         """
         Retrieves the start and end times of all programed heating periods for the given day.
@@ -403,10 +411,10 @@ class CometBlue:
         :return: dict with start# and end# values. # = 1-4
         """
         uuid = WEEKDAY.get(weekday)
-        value = self.__read_value(uuid)
+        value = await self.__read_value(uuid)
         return self.__transform_weekday_response(value)
 
-    def set_weekday(self, weekday: Weekday, values: dict):
+    async def set_weekday(self, weekday: Weekday, values: dict):
         """
         Sets the start and end times for programed heating periods for the given day.
 
@@ -417,7 +425,7 @@ class CometBlue:
         new_value = self.__transform_weekday_request(values)
         self.__write_value(WEEKDAY.get(weekday), new_value)
 
-    def get_holiday(self, number: int) -> dict:
+    async def get_holiday(self, number: int) -> dict:
         """
         Retrieves the configured holiday 1-8.
 
@@ -427,27 +435,27 @@ class CometBlue:
         if number not in range(1, 9):
             return dict()
 
-        values = self.__read_value(HOLIDAY[number])
+        values = await self.__read_value(HOLIDAY[number])
         return self.__transform_holiday_response(values)
 
-    def set_holiday(self, number: int, values: dict):
+    async def set_holiday(self, number: int, values: dict):
         """
 
         :param number: the number of the holiday season. Values 1-8 allowed
         :param values: start: datetime, end: datetime, temperature: float (0.5 degree steps)
         """
         new_value = self.__transform_holiday_request(values)
-        self.__write_value(HOLIDAY[number], new_value)
+        await self.__write_value(HOLIDAY[number], new_value)
 
-    def get_manual_mode(self) -> bool:
+    async def get_manual_mode(self) -> bool:
         """
         Retrieves if manual mode is enabled
         :return: True - if manual mode is enabled, False if not
         """
-        mode = self.__read_value(const.CHARACTERISTIC_SETTINGS)
+        mode = await self.__read_value(const.CHARACTERISTIC_SETTINGS)
         return bool(mode[0] & 0x01)
 
-    def set_manual_mode(self, value: bool):
+    async def set_manual_mode(self, value: bool):
         """
         Enables/Disables the manual mode.
         :param value: True - if manual mode should be enabled, False if not
@@ -459,9 +467,55 @@ class CometBlue:
 
         mode[1] = const.UNCHANGED_VALUE
         mode[2] = const.UNCHANGED_VALUE
-        self.__write_value(const.CHARACTERISTIC_SETTINGS, mode)
+        await self.__write_value(const.CHARACTERISTIC_SETTINGS, mode)
 
-    def get_multiple(self, values: List[str]) -> dict:
+    def _prepare_get_multiples(self, values: List[str]) -> dict:
+        """
+        Generate dictionary for get_multiples().
+        :param values: List of information to be retrieved. Valid entries are ['temperature', 'battery', 'datetime',
+        'holiday#' # = 1-8 or 'holidays' (retrieves holiday1-8), 'monday', 'tuesday', etc..., 'weekdays' (retrieves all
+        weekdays), 'manual']
+        :return: dictionary of type {key: (callable, parameter)}.
+        """
+        result = dict()
+
+        if len(values) == 0:
+            return result
+
+        switcher_holidays = {
+            str.format("holiday{}", day): (self.get_holiday, day) for day in HOLIDAY.keys()
+        }
+        switcher_weekdays = {
+            "monday": (self.get_weekday, Weekday.MONDAY),
+            "tuesday": (self.get_weekday, Weekday.TUESDAY),
+            "wednesday": (self.get_weekday, Weekday.WEDNESDAY),
+            "thursday": (self.get_weekday, Weekday.THURSDAY),
+            "friday": (self.get_weekday, Weekday.FRIDAY),
+            "saturday": (self.get_weekday, Weekday.SATURDAY),
+            "sunday": (self.get_weekday, Weekday.SUNDAY),
+        }
+
+        switcher = {
+            "temperature": (self.get_temperature, None),
+            "battery": (self.get_battery, None),
+            "datetime": (self.get_datetime, None),
+            **switcher_holidays,
+            "holidays": switcher_holidays,
+            **switcher_weekdays,
+            "weekdays": switcher_weekdays,
+            "manual": (self.get_manual_mode, None),
+        }
+
+        for v in values:
+            tmp = switcher.get(v)
+            if isinstance(tmp, dict):
+                result.update(tmp)
+            else:
+                result[v] = tmp
+
+        return result
+
+    async def get_multiple(self, values: List[str]) -> dict:
         """
         Retrieve multiple information at once. More performant than calling them by themselves - only one connection is
         used.
@@ -470,55 +524,81 @@ class CometBlue:
         weekdays), 'manual']
         :return: dictionary containing all requested information.
         """
-        result = dict()
-
-        if len(values) == 0:
-            return result
-
-        switcher = {
-            "temperature": self.get_temperature(),
-            "battery": self.get_battery(),
-            "datetime": self.get_datetime(),
-            "holidays": map(lambda day: {str.format("holiday{}", day): self.get_holiday(day)}, range(1, 9)),
-            "holiday1": self.get_holiday(1),
-            "holiday2": self.get_holiday(2),
-            "holiday3": self.get_holiday(3),
-            "holiday4": self.get_holiday(4),
-            "holiday5": self.get_holiday(5),
-            "holiday6": self.get_holiday(6),
-            "holiday7": self.get_holiday(7),
-            "holiday8": self.get_holiday(8),
-            "monday": self.get_weekday(Weekday.MONDAY),
-            "tuesday": self.get_weekday(Weekday.TUESDAY),
-            "wednesday": self.get_weekday(Weekday.WEDNESDAY),
-            "thursday": self.get_weekday(Weekday.THURSDAY),
-            "friday": self.get_weekday(Weekday.FRIDAY),
-            "saturday": self.get_weekday(Weekday.SATURDAY),
-            "sunday": self.get_weekday(Weekday.SUNDAY),
-            "weekdays": {"monday": self.get_weekday(Weekday.MONDAY),
-                         "tuesday": self.get_weekday(Weekday.TUESDAY),
-                         "wednesday": self.get_weekday(Weekday.WEDNESDAY),
-                         "thursday": self.get_weekday(Weekday.THURSDAY),
-                         "friday": self.get_weekday(Weekday.FRIDAY),
-                         "saturday": self.get_weekday(Weekday.SATURDAY),
-                         "sunday": self.get_weekday(Weekday.SUNDAY)},
-            "manual": self.get_manual_mode()
+        result = {
+            k: await v[0](v[1]) if v[1] else await v[0]()
+            for k, v in self._prepare_get_multiples(values).items()
         }
+        return result
 
-        for v in values:
-            tmp = switcher.get(v)
-            if callable(tmp):
-                result[v] = tmp()
-            else:
-                if isinstance(tmp, list):
-                    for x in tmp:
-                        if callable(tmp[x]):
-                            result[x] = tmp[x]()
-                        else:
-                            result[x] = tmp[x]
-                else:
-                    result[v] = tmp
+    async def __aenter__(self):
+        await self.connect()
+        return self
 
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.disconnect()
+
+    @staticmethod
+    async def discover(timeout=5) -> list:
+        devices = await BleakScanner.discover(timeout, return_adv=True)
+        macs = [
+            mac for mac, d in devices.items() if const.SERVICE in d[1].service_uuids
+        ]
+        return macs
+
+
+class CometBlue(AsyncCometBlue):
+    _loop: asyncio.AbstractEventLoop
+
+    def _run_in_loop(self, main):
+        if not hasattr(self, "_loop") or not self._loop:
+            self._loop = asyncio.new_event_loop()
+
+        return self._loop.run_until_complete(main)
+
+    def connect(self):
+        self._run_in_loop(super().connect())
+
+    def disconnect(self):
+        self._run_in_loop(super().disconnect())
+
+    def get_temperature(self) -> dict:
+        return self._run_in_loop(super().get_temperature())
+
+    def set_temperature(self, values: Dict[str, float]):
+        self._run_in_loop(super().set_temperature(values))
+
+    def get_battery(self):
+        return self._run_in_loop(super().get_battery())
+
+    def get_datetime(self) -> datetime:
+        return self._run_in_loop(super().get_datetime())
+
+    def set_datetime(self, date: datetime = datetime.now()):
+        self._run_in_loop(super().set_datetime(date))
+
+    def get_weekday(self, weekday: Weekday) -> dict:
+        return self._run_in_loop(super().get_weekday(weekday))
+
+    def set_weekday(self, weekday: Weekday, values: dict):
+        self._run_in_loop(super().set_weekday(weekday, values))
+
+    def get_holiday(self, number: int) -> dict:
+        return self._run_in_loop(super().get_holiday(number))
+
+    def set_holiday(self, number: int, values: dict):
+        self._run_in_loop(super().set_holiday(number, values))
+
+    def get_manual_mode(self) -> bool:
+        return self._run_in_loop(super().get_manual_mode())
+
+    def set_manual_mode(self, value: bool):
+        return self._run_in_loop(super().set_manual_mode(value))
+
+    def get_multiple(self, values: List[str]) -> dict:
+        result = {
+            k: v[0](v[1]) if v[1] else v[0]()
+            for k, v in self._prepare_get_multiples(values).items()
+        }
         return result
 
     def __enter__(self):
@@ -527,10 +607,10 @@ class CometBlue:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.disconnect()
+        self._loop.close()
+        self._loop = None
 
-    def discover(self, timeout=5) -> list:
-        self.adapter.start()
-        devices = self.adapter.scan(timeout)
-        blues = list(filter(lambda x: const.SERVICE in x.metadata["uuids"], devices))
-        macs = list(map(lambda x: x.address, blues))
-        return macs
+    @staticmethod
+    def discover(timeout=5) -> list:
+        loop = asyncio.new_event_loop()
+        return loop.run_until_complete(AsyncCometBlue.discover(timeout))
