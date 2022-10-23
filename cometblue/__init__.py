@@ -3,10 +3,10 @@ import platform
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List
+from typing import Dict, List, Union
 from uuid import UUID
 
-from bleak import BleakClient, BleakScanner
+from bleak import BLEDevice, BleakClient, BleakScanner
 from bleak.exc import BleakError
 
 from . import const
@@ -47,25 +47,43 @@ HOLIDAY = {
 }
 
 
-class AsyncCometBlue:
-    mac: str
+class CometBlue:
+    device: Union[BLEDevice, str]
     connected: bool
     pin: bytearray
     timeout: int
     client: BleakClient
+    _loop: asyncio.AbstractEventLoop
 
-    def __init__(self, mac: str, pin=0, timeout=2):
-        self.mac = mac
-        if bool(MAC_REGEX.match(mac)) is False and platform.system() != "Darwin":
-            raise ValueError("mac must be a valid Bluetooth Address in the format XX:XX:XX:XX:XX:XX.")
-        if bool(UUID_REGEX.match(mac)) is False and platform.system() == "Darwin":
-            raise ValueError("mac must be a valid UUID in the format XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX.")
+    def __init__(self, device: Union[BLEDevice, str], pin=0, timeout=2):
+        if isinstance(device, str):
+            if bool(MAC_REGEX.match(device)) is False and platform.system() != "Darwin":
+                raise ValueError(
+                    "device must be a valid Bluetooth Address in the format XX:XX:XX:XX:XX:XX or a bleak.BLEDevice."
+                )
+            if bool(UUID_REGEX.match(device)) is False and platform.system() == "Darwin":
+                raise ValueError(
+                    "device must be a valid UUID in the format XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX or bleak.BLEDevice."
+                )
         if 0 > pin >= 100000000:
             raise ValueError("pin can only consist of digits. Up to 8 digits allowed.")
 
+        self.device = device
         self.pin = self.transform_pin(pin)
         self.timeout = timeout
         self.connected = False
+
+    def __run_in_loop(self, main):
+        """
+        Helper to run async functions syncronized.
+
+        :param main: function with all parameters, e.g. self.get_weekday_async(1)
+        :return: return value of main
+        """
+        if not hasattr(self, "_loop") or not self._loop:
+            self._loop = asyncio.new_event_loop()
+
+        return self._loop.run_until_complete(main)
 
     async def __read_value(self, characteristic: UUID) -> bytearray:
         """
@@ -91,6 +109,7 @@ class AsyncCometBlue:
     def transform_pin(pin: int):
         """
         Transforms the pin a bytearray required by the Comet Blue device.
+
         :param pin: the pin to use
         :return: bytearray representing the pin
         """
@@ -99,6 +118,7 @@ class AsyncCometBlue:
     @staticmethod
     def __to_time_str(value: int) -> str:
         """
+        Transforms a Comet Blue time representation to a human-readable time-string.
 
         :param value:
         :return:
@@ -129,6 +149,7 @@ class AsyncCometBlue:
     def __transform_temperature_response(value: bytearray) -> dict:
         """
         Transforms a temperature response to a dictionary containing the values.
+
         :param value: bytearray retrieved from the device
         :return: dict containing the values
         """
@@ -148,6 +169,7 @@ class AsyncCometBlue:
         """
         Transforms a temperature dictionary to a bytearray to be transferred to the device.
         Valid dictionary entries are [manualTemp, targetTempLow, targetTempHigh, tempOffset].
+
         :param values: a dict[str, float] containing the values
         :return: the transformed bytearray
         """
@@ -182,6 +204,7 @@ class AsyncCometBlue:
     def __transform_datetime_response(value: bytearray) -> datetime:
         """
         Transforms a date response to a datetime object.
+
         :param value: the retrieved bytearray
         :return: the transformed datetime
         """
@@ -196,7 +219,8 @@ class AsyncCometBlue:
     @staticmethod
     def __transform_datetime_request(value: datetime) -> bytearray:
         """
-        Transforms a datetime object to a bytearray to be transferred to the device
+        Transforms a datetime object to a bytearray to be transferred to the device.
+
         :param value: the datetime to be transferred
         :return: bytearray representation of the datetime
         """
@@ -211,6 +235,7 @@ class AsyncCometBlue:
     def __transform_weekday_response(self, value: bytearray) -> dict:
         """
         Transforms a weekday response to a dictionary containing all four start and end times.
+
         :param value: bytearray retrieved from the device
         :return: dict containing start1-4 and end1-4 times
         """
@@ -228,6 +253,7 @@ class AsyncCometBlue:
     def __transform_weekday_request(self, values: dict) -> bytearray:
         """
         Transforms a dictionary containing start1-4 and end1-4 times to a bytearray used by the device.
+
         :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
         :return: bytearray to be transferred to the device
         """
@@ -264,7 +290,8 @@ class AsyncCometBlue:
     def __transform_holiday_response(values: bytearray) -> dict:
         """
         Transforms a retrieved holiday response to a dictionary containing start and end `datetime`s as well as the set
-        temperature
+        temperature.
+
         :param values: bytearray retrieved from the device
         :return: dictionary containing start: datetime, end: datetime and temperature: float or empty if bytearray is
         malformed
@@ -293,7 +320,8 @@ class AsyncCometBlue:
     def __transform_holiday_request(values: dict) -> bytearray:
         """
         Transforms a dictionary containing start: datetime, end: datetime as well as temperature: float to a bytearray
-        to be transferred to the device
+        to be transferred to the device.
+
         :param values: dictionary containing start: datetime, end: datetime, temperature: float
         :return: bytearray to be transferred to the device
         """
@@ -323,10 +351,11 @@ class AsyncCometBlue:
 
         return new_value
 
-    async def connect(self):
+    async def connect_async(self):
         """
         Connects to the device. Increases connection-timeout if connection could not be established up to twice the
-        initial timeout. Max 10 retries if.
+        initial timeout. Max 10 retries.
+
         :return:
         """
         timeout = self.timeout
@@ -341,16 +370,34 @@ class AsyncCometBlue:
                 timeout += 2
                 timeout = min(timeout, 2 * self.timeout)
 
-    async def disconnect(self):
+    def connect(self):
+        """
+        Connects to the device. Increases connection-timeout if connection could not be established up to twice the
+        initial timeout. Max 10 retries.
+
+        :return:
+        """
+        self.__run_in_loop(self.connect_async())
+
+    async def disconnect_async(self):
         """
         Disconnects the device.
+
         :return:
         """
         if self.connected:
             await self.client.disconnect()
             self.connected = False
 
-    async def get_temperature(self) -> dict:
+    def disconnect(self):
+        """
+        Disconnects the device.
+
+        :return:
+        """
+        self.__run_in_loop(self.disconnect_async())
+
+    async def get_temperature_async(self) -> dict:
         """Retrieves the temperature configurations from the device.
 
         :return: dict of the retrieved values
@@ -358,7 +405,14 @@ class AsyncCometBlue:
         value = await self.__read_value(const.CHARACTERISTIC_TEMPERATURE)
         return self.__transform_temperature_response(value)
 
-    async def set_temperature(self, values: Dict[str, float]):
+    def get_temperature(self) -> dict:
+        """Retrieves the temperature configurations from the device.
+
+        :return: dict of the retrieved values
+        """
+        return self.__run_in_loop(self.get_temperature_async())
+
+    async def set_temperature_async(self, values: Dict[str, float]):
         """Sets the time from the device.
         Allowed values for updates are:
            - manualTemp: temperature for the manual mode
@@ -376,7 +430,21 @@ class AsyncCometBlue:
         new_value = self.__transform_temperature_request(values)
         await self.__write_value(const.CHARACTERISTIC_TEMPERATURE, new_value)
 
-    async def get_battery(self):
+    def set_temperature(self, values: Dict[str, float]):
+        """Sets the time from the device.
+        Allowed values for updates are:
+           - manualTemp: temperature for the manual mode
+           - targetTempLow: lower bound for the automatic mode
+           - targetTempHigh: upper bound for the automatic mode
+           - tempOffset: offset for the measured temperature
+
+        All temperatures are in 0.5°C steps
+
+        :param values: Dictionary containing the new values.
+        """
+        self.__run_in_loop(self.set_temperature_async(values))
+
+    async def get_battery_async(self):
         """
         Retrieves the battery level in percent from the device
 
@@ -384,7 +452,15 @@ class AsyncCometBlue:
         """
         return (await self.__read_value(const.CHARACTERISTIC_BATTERY))[0]
 
-    async def get_datetime(self) -> datetime:
+    def get_battery(self):
+        """
+        Retrieves the battery level in percent from the device
+
+        :return: battery level in percent
+        """
+        return self.__run_in_loop(self.get_battery_async())
+
+    async def get_datetime_async(self) -> datetime:
         """
         Retrieve the current set date and time of the device - used for schedules
 
@@ -393,7 +469,15 @@ class AsyncCometBlue:
         result = await self.__read_value(const.CHARACTERISTIC_DATETIME)
         return self.__transform_datetime_response(result)
 
-    async def set_datetime(self, date: datetime = datetime.now()):
+    def get_datetime(self) -> datetime:
+        """
+        Retrieve the current set date and time of the device - used for schedules
+
+        :return: the retrieved datetime
+        """
+        return self.__run_in_loop(self.get_datetime_async())
+
+    async def set_datetime_async(self, date: datetime = datetime.now_async()):
         """
         Sets the date and time of the device - used for schedules
 
@@ -402,8 +486,15 @@ class AsyncCometBlue:
         new_value = self.__transform_datetime_request(date)
         await self.__write_value(const.CHARACTERISTIC_DATETIME, new_value)
 
-    async def get_weekday(self, weekday: Weekday) -> dict:
+    def set_datetime(self, date: datetime = datetime.now()):
+        """
+        Sets the date and time of the device - used for schedules
 
+        :param date: a datetime object, defaults to now
+        """
+        self.__run_in_loop(self.set_datetime_async(date))
+
+    async def get_weekday_async(self, weekday: Weekday) -> dict:
         """
         Retrieves the start and end times of all programed heating periods for the given day.
 
@@ -414,7 +505,16 @@ class AsyncCometBlue:
         value = await self.__read_value(uuid)
         return self.__transform_weekday_response(value)
 
-    async def set_weekday(self, weekday: Weekday, values: dict):
+    def get_weekday(self, weekday: Weekday) -> dict:
+        """
+        Retrieves the start and end times of all programed heating periods for the given day.
+
+        :param weekday: the day to query
+        :return: dict with start# and end# values. # = 1-4
+        """
+        return self.__run_in_loop(self.get_weekday_async(weekday))
+
+    async def set_weekday_async(self, weekday: Weekday, values: dict):
         """
         Sets the start and end times for programed heating periods for the given day.
 
@@ -425,7 +525,16 @@ class AsyncCometBlue:
         new_value = self.__transform_weekday_request(values)
         self.__write_value(WEEKDAY.get(weekday), new_value)
 
-    async def get_holiday(self, number: int) -> dict:
+    def set_weekday(self, weekday: Weekday, values: dict):
+        """
+        Sets the start and end times for programed heating periods for the given day.
+
+        :param weekday: the day to set
+        :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
+        """
+        self.__run_in_loop(self.set_weekday_async(weekday, values))
+
+    async def get_holiday_async(self, number: int) -> dict:
         """
         Retrieves the configured holiday 1-8.
 
@@ -433,13 +542,23 @@ class AsyncCometBlue:
         :return: dict { start: datetime, end: datetime, temperature: float }
         """
         if number not in range(1, 9):
-            return dict()
+            return {}
 
         values = await self.__read_value(HOLIDAY[number])
         return self.__transform_holiday_response(values)
 
-    async def set_holiday(self, number: int, values: dict):
+    def get_holiday(self, number: int) -> dict:
         """
+        Retrieves the configured holiday 1-8.
+
+        :param number: the number of the holiday season. Values 1-8 allowed
+        :return: dict { start: datetime, end: datetime, temperature: float }
+        """
+        return self.__run_in_loop(self.get_holiday_async(number))
+
+    async def set_holiday_async(self, number: int, values: dict):
+        """
+        Sets the configured holiday 1-8.
 
         :param number: the number of the holiday season. Values 1-8 allowed
         :param values: start: datetime, end: datetime, temperature: float (0.5 degree steps)
@@ -447,7 +566,16 @@ class AsyncCometBlue:
         new_value = self.__transform_holiday_request(values)
         await self.__write_value(HOLIDAY[number], new_value)
 
-    async def get_manual_mode(self) -> bool:
+    def set_holiday(self, number: int, values: dict):
+        """
+        Set the configured holiday 1-8.
+
+        :param number: the number of the holiday season. Values 1-8 allowed
+        :param values: start: datetime, end: datetime, temperature: float (0.5 degree steps)
+        """
+        self.__run_in_loop(self.set_holiday_async(number, values))
+
+    async def get_manual_mode_async(self) -> bool:
         """
         Retrieves if manual mode is enabled
         :return: True - if manual mode is enabled, False if not
@@ -455,9 +583,18 @@ class AsyncCometBlue:
         mode = await self.__read_value(const.CHARACTERISTIC_SETTINGS)
         return bool(mode[0] & 0x01)
 
-    async def set_manual_mode(self, value: bool):
+    def get_manual_mode(self) -> bool:
+        """
+        Retrieves if manual mode is enabled
+
+        :return: True - if manual mode is enabled, False if not
+        """
+        return self.__run_in_loop(self.get_manual_mode_async())
+
+    async def set_manual_mode_async(self, value: bool):
         """
         Enables/Disables the manual mode.
+
         :param value: True - if manual mode should be enabled, False if not
         :return:
         """
@@ -469,13 +606,23 @@ class AsyncCometBlue:
         mode[2] = const.UNCHANGED_VALUE
         await self.__write_value(const.CHARACTERISTIC_SETTINGS, mode)
 
+    def set_manual_mode(self, value: bool):
+        """
+        Enables/Disables the manual mode.
+
+        :param value: True - if manual mode should be enabled, False if not
+        :return:
+        """
+        return self.__run_in_loop(self.set_manual_mode_async(value))
+
     def _prepare_get_multiples(self, values: List[str]) -> dict:
         """
         Generate dictionary for get_multiples().
+
         :param values: List of information to be retrieved. Valid entries are ['temperature', 'battery', 'datetime',
         'holiday#' # = 1-8 or 'holidays' (retrieves holiday1-8), 'monday', 'tuesday', etc..., 'weekdays' (retrieves all
         weekdays), 'manual']
-        :return: dictionary of type {key: (callable, parameter)}.
+        :return: dictionary of type {key: (func_name, parameter)}.
         """
         result = dict()
 
@@ -483,27 +630,27 @@ class AsyncCometBlue:
             return result
 
         switcher_holidays = {
-            str.format("holiday{}", day): (self.get_holiday, day) for day in HOLIDAY.keys()
+            str.format("holiday{}", day): ("get_holiday", day) for day in HOLIDAY
         }
         switcher_weekdays = {
-            "monday": (self.get_weekday, Weekday.MONDAY),
-            "tuesday": (self.get_weekday, Weekday.TUESDAY),
-            "wednesday": (self.get_weekday, Weekday.WEDNESDAY),
-            "thursday": (self.get_weekday, Weekday.THURSDAY),
-            "friday": (self.get_weekday, Weekday.FRIDAY),
-            "saturday": (self.get_weekday, Weekday.SATURDAY),
-            "sunday": (self.get_weekday, Weekday.SUNDAY),
+            "monday": ("get_weekday", Weekday.MONDAY),
+            "tuesday": ("get_weekday", Weekday.TUESDAY),
+            "wednesday": ("get_weekday", Weekday.WEDNESDAY),
+            "thursday": ("get_weekday", Weekday.THURSDAY),
+            "friday": ("get_weekday", Weekday.FRIDAY),
+            "saturday": ("get_weekday", Weekday.SATURDAY),
+            "sunday": ("get_weekday", Weekday.SUNDAY),
         }
 
         switcher = {
-            "temperature": (self.get_temperature, None),
-            "battery": (self.get_battery, None),
-            "datetime": (self.get_datetime, None),
+            "temperature": ("get_temperature", None),
+            "battery": ("get_battery", None),
+            "datetime": ("get_datetime", None),
             **switcher_holidays,
             "holidays": switcher_holidays,
             **switcher_weekdays,
             "weekdays": switcher_weekdays,
-            "manual": (self.get_manual_mode, None),
+            "manual": ("get_manual_mode", None),
         }
 
         for v in values:
@@ -515,17 +662,34 @@ class AsyncCometBlue:
 
         return result
 
-    async def get_multiple(self, values: List[str]) -> dict:
+    async def get_multiple_async(self, values: List[str]) -> dict:
         """
         Retrieve multiple information at once. More performant than calling them by themselves - only one connection is
         used.
+
         :param values: List of information to be retrieved. Valid entries are ['temperature', 'battery', 'datetime',
         'holiday#' # = 1-8 or 'holidays' (retrieves holiday1-8), 'monday', 'tuesday', etc..., 'weekdays' (retrieves all
         weekdays), 'manual']
         :return: dictionary containing all requested information.
         """
         result = {
-            k: await v[0](v[1]) if v[1] else await v[0]()
+            k: await getattr(self, f"{v[0]}_async")(v[1]) if v[1] else await getattr(self, f"{v[0]}_async")()
+            for k, v in self._prepare_get_multiples(values).items()
+        }
+        return result
+
+    def get_multiple(self, values: List[str]) -> dict:
+        """
+        Retrieve multiple information at once. More performant than calling them by themselves - only one connection is
+        used.
+
+        :param values: List of information to be retrieved. Valid entries are ['temperature', 'battery', 'datetime',
+        'holiday#' # = 1-8 or 'holidays' (retrieves holiday1-8), 'monday', 'tuesday', etc..., 'weekdays' (retrieves all
+        weekdays), 'manual']
+        :return: dictionary containing all requested information.
+        """
+        result = {
+            k: getattr(self, v[0])(v[1]) if v[1] else getattr(self, v[0])()
             for k, v in self._prepare_get_multiples(values).items()
         }
         return result
@@ -537,70 +701,6 @@ class AsyncCometBlue:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.disconnect()
 
-    @staticmethod
-    async def discover(timeout=5) -> list:
-        devices = await BleakScanner.discover(timeout, return_adv=True)
-        macs = [
-            mac for mac, d in devices.items() if const.SERVICE in d[1].service_uuids
-        ]
-        return macs
-
-
-class CometBlue(AsyncCometBlue):
-    _loop: asyncio.AbstractEventLoop
-
-    def _run_in_loop(self, main):
-        if not hasattr(self, "_loop") or not self._loop:
-            self._loop = asyncio.new_event_loop()
-
-        return self._loop.run_until_complete(main)
-
-    def connect(self):
-        self._run_in_loop(super().connect())
-
-    def disconnect(self):
-        self._run_in_loop(super().disconnect())
-
-    def get_temperature(self) -> dict:
-        return self._run_in_loop(super().get_temperature())
-
-    def set_temperature(self, values: Dict[str, float]):
-        self._run_in_loop(super().set_temperature(values))
-
-    def get_battery(self):
-        return self._run_in_loop(super().get_battery())
-
-    def get_datetime(self) -> datetime:
-        return self._run_in_loop(super().get_datetime())
-
-    def set_datetime(self, date: datetime = datetime.now()):
-        self._run_in_loop(super().set_datetime(date))
-
-    def get_weekday(self, weekday: Weekday) -> dict:
-        return self._run_in_loop(super().get_weekday(weekday))
-
-    def set_weekday(self, weekday: Weekday, values: dict):
-        self._run_in_loop(super().set_weekday(weekday, values))
-
-    def get_holiday(self, number: int) -> dict:
-        return self._run_in_loop(super().get_holiday(number))
-
-    def set_holiday(self, number: int, values: dict):
-        self._run_in_loop(super().set_holiday(number, values))
-
-    def get_manual_mode(self) -> bool:
-        return self._run_in_loop(super().get_manual_mode())
-
-    def set_manual_mode(self, value: bool):
-        return self._run_in_loop(super().set_manual_mode(value))
-
-    def get_multiple(self, values: List[str]) -> dict:
-        result = {
-            k: v[0](v[1]) if v[1] else v[0]()
-            for k, v in self._prepare_get_multiples(values).items()
-        }
-        return result
-
     def __enter__(self):
         self.connect()
         return self
@@ -610,7 +710,28 @@ class CometBlue(AsyncCometBlue):
         self._loop.close()
         self._loop = None
 
-    @staticmethod
-    def discover(timeout=5) -> list:
+    @classmethod
+    async def discover_async(cls, timeout=5) -> List[BLEDevice]:
+        """
+        Discovers available CometBlue devices.
+
+        :param timeout: Duration of Bluetooth scan.
+        :return: List of CometBlue BLEDevices.
+        """
+        devices = await BleakScanner.discover(timeout, return_adv=True)
+        cometblue_devices = [
+            d[0] for d in devices.values() if const.SERVICE in d[1].service_uuids
+        ]
+        return cometblue_devices
+
+    @classmethod
+    def discover(cls, timeout=5) -> list:
+        """
+        Discovers available CometBlue devices.
+
+        :param timeout: Duration of Bluetooth scan.
+        :return: List of CometBlue device MACs.
+        """
         loop = asyncio.new_event_loop()
-        return loop.run_until_complete(AsyncCometBlue.discover(timeout))
+        cometblue_devices = loop.run_until_complete(cls.discover_async(timeout))
+        return [d.address for d in cometblue_devices]
