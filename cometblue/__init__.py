@@ -286,16 +286,14 @@ class AsyncCometBlue:
         malformed
         """
         # validate values
-        if (
-            values[3] not in range(0, 100)
-            or values[2] not in range(1, 13)
-            or values[1] not in range(1, 31)
-            or values[0] not in range(0, 25)
-            or values[7] not in range(0, 100)
-            or values[6] not in range(1, 13)
-            or values[5] not in range(1, 31)
-            or values[4] not in range(0, 25)
-        ):
+        if values[3] not in range(0, 100) or \
+                values[2] not in range(1, 13) or \
+                values[1] not in range(1, 31) or \
+                values[0] not in range(0, 25) or \
+                values[7] not in range(0, 100) or \
+                values[6] not in range(1, 13) or \
+                values[5] not in range(1, 31) or \
+                values[4] not in range(0, 25):
             return dict()
 
         start = datetime(values[3] + 2000, values[2], values[1], values[0])
@@ -314,11 +312,7 @@ class AsyncCometBlue:
         :param values: dictionary containing start: datetime, end: datetime, temperature: float
         :return: bytearray to be transferred to the device
         """
-        if (
-            not values.__contains__("start")
-            or not values.__contains__("end")
-            or not values.__contains__("temperature")
-        ):
+        if not values.__contains__("start") or not values.__contains__("end") or not values.__contains__("temperature"):
             print("Nope")
             return bytearray(9)
 
