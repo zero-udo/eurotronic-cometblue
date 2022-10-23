@@ -47,13 +47,14 @@ HOLIDAY = {
 }
 
 
-class CometBlue:
+class AsyncCometBlue:
+    """Asynchronous adapter for Eurotronic Comet Blue (and rebranden) bluetooth TRV."""
+
     device: Union[BLEDevice, str]
     connected: bool
     pin: bytearray
     timeout: int
     client: BleakClient
-    _loop: asyncio.AbstractEventLoop
 
     def __init__(self, device: Union[BLEDevice, str], pin=0, timeout=2):
         if isinstance(device, str):
@@ -72,18 +73,6 @@ class CometBlue:
         self.pin = self.transform_pin(pin)
         self.timeout = timeout
         self.connected = False
-
-    def __run_in_loop(self, main):
-        """
-        Helper to run async functions syncronized.
-
-        :param main: function with all parameters, e.g. self.get_weekday_async(1)
-        :return: return value of main
-        """
-        if not hasattr(self, "_loop") or not self._loop:
-            self._loop = asyncio.new_event_loop()
-
-        return self._loop.run_until_complete(main)
 
     async def __read_value(self, characteristic: UUID) -> bytearray:
         """
@@ -362,22 +351,13 @@ class CometBlue:
         tries = 0
         while not self.connected and tries < 10:
             try:
-                self.client = BleakClient(self.mac)
+                self.client = BleakClient(self.device)
                 await self.client.connect()
                 await self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
                 self.connected = True
             except BleakError:
                 timeout += 2
                 timeout = min(timeout, 2 * self.timeout)
-
-    def connect(self):
-        """
-        Connects to the device. Increases connection-timeout if connection could not be established up to twice the
-        initial timeout. Max 10 retries.
-
-        :return:
-        """
-        self.__run_in_loop(self.connect_async())
 
     async def disconnect_async(self):
         """
@@ -389,14 +369,6 @@ class CometBlue:
             await self.client.disconnect()
             self.connected = False
 
-    def disconnect(self):
-        """
-        Disconnects the device.
-
-        :return:
-        """
-        self.__run_in_loop(self.disconnect_async())
-
     async def get_temperature_async(self) -> dict:
         """Retrieves the temperature configurations from the device.
 
@@ -404,13 +376,6 @@ class CometBlue:
         """
         value = await self.__read_value(const.CHARACTERISTIC_TEMPERATURE)
         return self.__transform_temperature_response(value)
-
-    def get_temperature(self) -> dict:
-        """Retrieves the temperature configurations from the device.
-
-        :return: dict of the retrieved values
-        """
-        return self.__run_in_loop(self.get_temperature_async())
 
     async def set_temperature_async(self, values: Dict[str, float]):
         """Sets the time from the device.
@@ -430,20 +395,6 @@ class CometBlue:
         new_value = self.__transform_temperature_request(values)
         await self.__write_value(const.CHARACTERISTIC_TEMPERATURE, new_value)
 
-    def set_temperature(self, values: Dict[str, float]):
-        """Sets the time from the device.
-        Allowed values for updates are:
-           - manualTemp: temperature for the manual mode
-           - targetTempLow: lower bound for the automatic mode
-           - targetTempHigh: upper bound for the automatic mode
-           - tempOffset: offset for the measured temperature
-
-        All temperatures are in 0.5°C steps
-
-        :param values: Dictionary containing the new values.
-        """
-        self.__run_in_loop(self.set_temperature_async(values))
-
     async def get_battery_async(self):
         """
         Retrieves the battery level in percent from the device
@@ -451,14 +402,6 @@ class CometBlue:
         :return: battery level in percent
         """
         return (await self.__read_value(const.CHARACTERISTIC_BATTERY))[0]
-
-    def get_battery(self):
-        """
-        Retrieves the battery level in percent from the device
-
-        :return: battery level in percent
-        """
-        return self.__run_in_loop(self.get_battery_async())
 
     async def get_datetime_async(self) -> datetime:
         """
@@ -469,15 +412,7 @@ class CometBlue:
         result = await self.__read_value(const.CHARACTERISTIC_DATETIME)
         return self.__transform_datetime_response(result)
 
-    def get_datetime(self) -> datetime:
-        """
-        Retrieve the current set date and time of the device - used for schedules
-
-        :return: the retrieved datetime
-        """
-        return self.__run_in_loop(self.get_datetime_async())
-
-    async def set_datetime_async(self, date: datetime = datetime.now_async()):
+    async def set_datetime_async(self, date: datetime = datetime.now()):
         """
         Sets the date and time of the device - used for schedules
 
@@ -485,14 +420,6 @@ class CometBlue:
         """
         new_value = self.__transform_datetime_request(date)
         await self.__write_value(const.CHARACTERISTIC_DATETIME, new_value)
-
-    def set_datetime(self, date: datetime = datetime.now()):
-        """
-        Sets the date and time of the device - used for schedules
-
-        :param date: a datetime object, defaults to now
-        """
-        self.__run_in_loop(self.set_datetime_async(date))
 
     async def get_weekday_async(self, weekday: Weekday) -> dict:
         """
@@ -505,15 +432,6 @@ class CometBlue:
         value = await self.__read_value(uuid)
         return self.__transform_weekday_response(value)
 
-    def get_weekday(self, weekday: Weekday) -> dict:
-        """
-        Retrieves the start and end times of all programed heating periods for the given day.
-
-        :param weekday: the day to query
-        :return: dict with start# and end# values. # = 1-4
-        """
-        return self.__run_in_loop(self.get_weekday_async(weekday))
-
     async def set_weekday_async(self, weekday: Weekday, values: dict):
         """
         Sets the start and end times for programed heating periods for the given day.
@@ -524,15 +442,6 @@ class CometBlue:
 
         new_value = self.__transform_weekday_request(values)
         self.__write_value(WEEKDAY.get(weekday), new_value)
-
-    def set_weekday(self, weekday: Weekday, values: dict):
-        """
-        Sets the start and end times for programed heating periods for the given day.
-
-        :param weekday: the day to set
-        :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
-        """
-        self.__run_in_loop(self.set_weekday_async(weekday, values))
 
     async def get_holiday_async(self, number: int) -> dict:
         """
@@ -547,15 +456,6 @@ class CometBlue:
         values = await self.__read_value(HOLIDAY[number])
         return self.__transform_holiday_response(values)
 
-    def get_holiday(self, number: int) -> dict:
-        """
-        Retrieves the configured holiday 1-8.
-
-        :param number: the number of the holiday season. Values 1-8 allowed
-        :return: dict { start: datetime, end: datetime, temperature: float }
-        """
-        return self.__run_in_loop(self.get_holiday_async(number))
-
     async def set_holiday_async(self, number: int, values: dict):
         """
         Sets the configured holiday 1-8.
@@ -566,15 +466,6 @@ class CometBlue:
         new_value = self.__transform_holiday_request(values)
         await self.__write_value(HOLIDAY[number], new_value)
 
-    def set_holiday(self, number: int, values: dict):
-        """
-        Set the configured holiday 1-8.
-
-        :param number: the number of the holiday season. Values 1-8 allowed
-        :param values: start: datetime, end: datetime, temperature: float (0.5 degree steps)
-        """
-        self.__run_in_loop(self.set_holiday_async(number, values))
-
     async def get_manual_mode_async(self) -> bool:
         """
         Retrieves if manual mode is enabled
@@ -582,14 +473,6 @@ class CometBlue:
         """
         mode = await self.__read_value(const.CHARACTERISTIC_SETTINGS)
         return bool(mode[0] & 0x01)
-
-    def get_manual_mode(self) -> bool:
-        """
-        Retrieves if manual mode is enabled
-
-        :return: True - if manual mode is enabled, False if not
-        """
-        return self.__run_in_loop(self.get_manual_mode_async())
 
     async def set_manual_mode_async(self, value: bool):
         """
@@ -605,15 +488,6 @@ class CometBlue:
         mode[1] = const.UNCHANGED_VALUE
         mode[2] = const.UNCHANGED_VALUE
         await self.__write_value(const.CHARACTERISTIC_SETTINGS, mode)
-
-    def set_manual_mode(self, value: bool):
-        """
-        Enables/Disables the manual mode.
-
-        :param value: True - if manual mode should be enabled, False if not
-        :return:
-        """
-        return self.__run_in_loop(self.set_manual_mode_async(value))
 
     def _prepare_get_multiples(self, values: List[str]) -> dict:
         """
@@ -678,6 +552,161 @@ class CometBlue:
         }
         return result
 
+    async def __aenter__(self):
+        await self.connect_async()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.disconnect_async()
+
+    @classmethod
+    async def discover_async(cls, timeout=5) -> List[BLEDevice]:
+        """
+        Discovers available CometBlue devices.
+
+        :param timeout: Duration of Bluetooth scan.
+        :return: List of CometBlue BLEDevices.
+        """
+        devices = await BleakScanner.discover(timeout, return_adv=True)
+        cometblue_devices = [
+            d[0] for d in devices.values() if const.SERVICE in d[1].service_uuids
+        ]
+        return cometblue_devices
+
+
+class CometBlue(AsyncCometBlue):
+    """Synchronous adapter for Eurotronic Comet Blue (and rebranden) bluetooth TRV.
+
+    If possible, use the async AsyncCometBlue."""
+
+    _loop: asyncio.AbstractEventLoop
+
+    def __run_in_loop(self, main):
+        """
+        Helper to run async functions syncronized.
+
+        :param main: function with all parameters, e.g. self.get_weekday_async(1)
+        :return: return value of main
+        """
+        if not hasattr(self, "_loop") or not self._loop:
+            self._loop = asyncio.new_event_loop()
+
+        return self._loop.run_until_complete(main)
+
+    def connect(self):
+        """
+        Connects to the device. Increases connection-timeout if connection could not be established up to twice the
+        initial timeout. Max 10 retries.
+
+        :return:
+        """
+        self.__run_in_loop(self.connect_async())
+
+    def disconnect(self):
+        """
+        Disconnects the device.
+
+        :return:
+        """
+        self.__run_in_loop(self.disconnect_async())
+
+    def get_temperature(self) -> dict:
+        """Retrieves the temperature configurations from the device.
+
+        :return: dict of the retrieved values
+        """
+        return self.__run_in_loop(self.get_temperature_async())
+
+    def set_temperature(self, values: Dict[str, float]):
+        """Sets the time from the device.
+        Allowed values for updates are:
+           - manualTemp: temperature for the manual mode
+           - targetTempLow: lower bound for the automatic mode
+           - targetTempHigh: upper bound for the automatic mode
+           - tempOffset: offset for the measured temperature
+
+        All temperatures are in 0.5°C steps
+
+        :param values: Dictionary containing the new values.
+        """
+        self.__run_in_loop(self.set_temperature_async(values))
+
+    def get_battery(self):
+        """
+        Retrieves the battery level in percent from the device
+
+        :return: battery level in percent
+        """
+        return self.__run_in_loop(self.get_battery_async())
+
+    def get_datetime(self) -> datetime:
+        """
+        Retrieve the current set date and time of the device - used for schedules
+
+        :return: the retrieved datetime
+        """
+        return self.__run_in_loop(self.get_datetime_async())
+
+    def set_datetime(self, date: datetime = datetime.now()):
+        """
+        Sets the date and time of the device - used for schedules
+
+        :param date: a datetime object, defaults to now
+        """
+        self.__run_in_loop(self.set_datetime_async(date))
+
+    def get_weekday(self, weekday: Weekday) -> dict:
+        """
+        Retrieves the start and end times of all programed heating periods for the given day.
+
+        :param weekday: the day to query
+        :return: dict with start# and end# values. # = 1-4
+        """
+        return self.__run_in_loop(self.get_weekday_async(weekday))
+    def set_weekday(self, weekday: Weekday, values: dict):
+        """
+        Sets the start and end times for programed heating periods for the given day.
+
+        :param weekday: the day to set
+        :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
+        """
+        self.__run_in_loop(self.set_weekday_async(weekday, values))
+
+    def get_holiday(self, number: int) -> dict:
+        """
+        Retrieves the configured holiday 1-8.
+
+        :param number: the number of the holiday season. Values 1-8 allowed
+        :return: dict { start: datetime, end: datetime, temperature: float }
+        """
+        return self.__run_in_loop(self.get_holiday_async(number))
+
+    def set_holiday(self, number: int, values: dict):
+        """
+        Set the configured holiday 1-8.
+
+        :param number: the number of the holiday season. Values 1-8 allowed
+        :param values: start: datetime, end: datetime, temperature: float (0.5 degree steps)
+        """
+        self.__run_in_loop(self.set_holiday_async(number, values))
+
+    def get_manual_mode(self) -> bool:
+        """
+        Retrieves if manual mode is enabled
+
+        :return: True - if manual mode is enabled, False if not
+        """
+        return self.__run_in_loop(self.get_manual_mode_async())
+
+    def set_manual_mode(self, value: bool):
+        """
+        Enables/Disables the manual mode.
+
+        :param value: True - if manual mode should be enabled, False if not
+        :return:
+        """
+        return self.__run_in_loop(self.set_manual_mode_async(value))
+
     def get_multiple(self, values: List[str]) -> dict:
         """
         Retrieve multiple information at once. More performant than calling them by themselves - only one connection is
@@ -694,13 +723,6 @@ class CometBlue:
         }
         return result
 
-    async def __aenter__(self):
-        await self.connect()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.disconnect()
-
     def __enter__(self):
         self.connect()
         return self
@@ -709,20 +731,6 @@ class CometBlue:
         self.disconnect()
         self._loop.close()
         self._loop = None
-
-    @classmethod
-    async def discover_async(cls, timeout=5) -> List[BLEDevice]:
-        """
-        Discovers available CometBlue devices.
-
-        :param timeout: Duration of Bluetooth scan.
-        :return: List of CometBlue BLEDevices.
-        """
-        devices = await BleakScanner.discover(timeout, return_adv=True)
-        cometblue_devices = [
-            d[0] for d in devices.values() if const.SERVICE in d[1].service_uuids
-        ]
-        return cometblue_devices
 
     @classmethod
     def discover(cls, timeout=5) -> list:
