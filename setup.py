@@ -20,6 +20,6 @@ setuptools.setup(
         "Operating System :: POSIX :: Linux",
         "Development Status :: 5 - Production/Stable",
     ],
-    install_requires="pygatt[GATTTOOL]==4.0.5",
+    install_requires="bleak",
     python_requires='>=3.6',
 )

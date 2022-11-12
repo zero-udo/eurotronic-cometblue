@@ -1,5 +1,6 @@
 # Bluetooth characteristics UUIDs
 from uuid import UUID
+
 SERVICE = "47e9ee00-47e9-11e4-8939-164230d1df67"
 
 CHARACTERISTIC_DATETIME = UUID("47e9ee01-47e9-11e4-8939-164230d1df67")
