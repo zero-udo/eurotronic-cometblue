@@ -48,7 +48,7 @@ HOLIDAY = {
 
 
 class AsyncCometBlue:
-    """Asynchronous adapter for Eurotronic Comet Blue (and rebranden) bluetooth TRV."""
+    """Asynchronous adapter for Eurotronic Comet Blue (and rebranded) bluetooth TRV."""
 
     device: Union[BLEDevice, str]
     connected: bool
@@ -435,7 +435,7 @@ class AsyncCometBlue:
         """
 
         new_value = self.__transform_weekday_request(values)
-        self.__write_value(WEEKDAY.get(weekday), new_value)
+        await self.__write_value(WEEKDAY.get(weekday), new_value)
 
     async def get_holiday_async(self, number: int) -> dict:
         """
@@ -569,7 +569,7 @@ class AsyncCometBlue:
 
 
 class CometBlue(AsyncCometBlue):
-    """Synchronous adapter for Eurotronic Comet Blue (and rebranden) bluetooth TRV.
+    """Synchronous adapter for Eurotronic Comet Blue (and rebranded) bluetooth TRV.
 
     If possible, use the async AsyncCometBlue."""
 
@@ -577,7 +577,7 @@ class CometBlue(AsyncCometBlue):
 
     def __run_in_loop(self, main):
         """
-        Helper to run async functions syncronized.
+        Helper to run async functions synchronized.
 
         :param main: function with all parameters, e.g. self.get_weekday_async(1)
         :return: return value of main

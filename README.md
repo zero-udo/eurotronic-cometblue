@@ -4,18 +4,18 @@ eurotronic-cometblue is a library to communicate with your Eurotronic GmbH Comet
 
 The device supports up to four programmable schedules for each weekday. Longer periods can be set as holidays. There are 8 holiday slots available.
 
-This library depends on [pygatt\[GATTTOOL\]](https://github.com/peplin/pygatt) and the BlueZ-Stack, which requires Linux.
+This library depends on [bleak](https://github.com/hbldh/bleak) and runs therefore on Linux, Windows and macOS (thanks to [rikroe](https://github.com/rikroe)).
 
 ## Compatible devices
 
 Comet Blue radiator controllers are sold under different names:
 
-| "Manufacturer" | Model      | Tested             |
-| -------------- | ---------- |:------------------:|
+| "Manufacturer" | Model      |       Tested       |
+|----------------|------------|:------------------:|
 | Eurotronic     | Comet Blue | :heavy_check_mark: |
 | Sygonix        | HT100 BT   | :heavy_check_mark: |
-| Xavax          | Hama       | :grey_question:    |
-| Silvercrest    | RT2000BT   | :grey_question:    |
+| Xavax          | Hama       |  :grey_question:   |
+| Silvercrest    | RT2000BT   |  :grey_question:   |
 
 This library should work with all listed radiator controllers, but is only tested with a Sygonix HT100BT which is the only one I own.
 
@@ -36,10 +36,10 @@ Import the library and instantiate an object.
 Parameters are the device MAC-Address and the (optional) PIN. Depending on your connection quality you can specify a longer or shorter discovery duration.
 
 | Parameter | required? | default value |
-| --------- |:---------:| ------------- |
-| mac       | yes       | None          |
-| pin       | no        | 0             |
-| timeout   | no        | 2             |
+|-----------|:---------:|---------------|
+| mac       |    yes    | None          |
+| pin       |    no     | 0             |
+| timeout   |    no     | 2             |
 
 
 
@@ -48,11 +48,18 @@ from cometblue import CometBlue
 
 blue = CometBlue(mac="00:00:00:00:00:00",pin=123456, timeout=2)
 ```
+or 
+```python
+from cometblue import AsyncCometBlue
 
-The following methods are available:
+blue = AsyncCometBlue(mac="00:00:00:00:00:00",pin=123456, timeout=2)
+```
+for an asynchronous client.
+
+The following (synchronous) methods are available, for the asynchronous variants add `_async`:
 
 | Method            | Parameter                                                                                                                                                                                                                                                                                                     | Return Value                                                                                                                                                                            |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `get_temperature` | None                                                                                                                                                                                                                                                                                                          | `dict` with <ul><li>'currentTemp'</li><li>'manualTemp'</li><li>'targetTempLow'</li><li>'targetTempHigh'</li><li>'tempOffset'</li><li>'windowOpen'</li><li>'windowOpenMinutes'</li></ul> |
 | `set_temperature` | `dict` with the same values as `get_temperature`. Not all values have to be set.                                                                                                                                                                                                                              | None                                                                                                                                                                                    |
 | `get_battery`     | None                                                                                                                                                                                                                                                                                                          | `int` - Battery value in percent                                                                                                                                                        |
@@ -71,10 +78,12 @@ The following methods are available:
 
 ## Examples
 
+Use `CometBlueAsync` and `[method_name]_async` for asynchronous handling.
+
 ### Instantiating and retrieving the current temperature
 
 ```python
-from cometblue import CometBlue, Weekday
+from cometblue import CometBlue
 
 blue = CometBlue("00:00:00:00:00:00", 123456)
 blue.connect()
@@ -109,13 +118,13 @@ results in
 
 ### Setting a new schedule
 
-Setting a new schedule for mondays with two heating periods:
+Setting a new schedule for Mondays with two heating periods:
 
 - Period 1 from 06:00 to 08:00
 
-- Period 2 form 16:00 to 22:00
+- Period 2 from 16:00 to 22:00
 
-To use this schedule make sure to disable manual mode.
+To use this schedule, make sure to disable manual mode.
 
 ```python
 blue.set_weekday(Weekday.MONDAY, 
@@ -137,3 +146,4 @@ blue.set_holiday(2, {"start": datetime(2020, 12, 26, 18),
 ## Credits:
 
 * Thorsten Tränker for his reverse engineering work done [here](https://www.torsten-traenkner.de/wissen/smarthome/heizung.php)
+* [rikroe](https://github.com/rikroe) for the switch to bleak
