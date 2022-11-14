@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="eurotronic-cometblue",
     version="1.1.0",
-    author="Johanens Rottler",
+    author="Johannes Rottler",
     author_email="johannes@rottler.me",
     description="Allows you to access Eurotronic GmbH BLE Comet Blue Radiator Controller",
     long_description=long_description,
