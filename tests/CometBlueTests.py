@@ -64,6 +64,56 @@ class CometBlueTest(unittest.TestCase):
                 r"'windowOpenMinutes': [0-9]+}"
             ))
 
+    def test_setWeekdayComplete(self):
+        with CometBlue(self.MAC) as blue:
+            blue.set_weekday(Weekday.MONDAY, {
+                "start1": "08:00", "end1": "09:00",
+                "start2": "10:00", "end2": "11:00",
+                "start3": "12:00", "end3": "13:00",
+                "start4": "14:00", "end4": "15:00"
+            })
+
+        with CometBlue(self.MAC) as blue:
+            result = blue.get_weekday(Weekday.MONDAY)
+            self.assertRegex(str(result), re.compile(
+                r"{'start1': '08:00', 'end1': '09:00', " +
+                r"'start2': '10:00', 'end2': '11:00', " +
+                r"'start3': '12:00', 'end3': '13:00', " +
+                r"'start4': '14:00', 'end4': '15:00'}"
+            ))
+
+    def test_setWeekdayPartial(self):
+        with CometBlue(self.MAC) as blue:
+            blue.set_weekday(Weekday.MONDAY, {
+                "start1": "08:00", "end1": "09:00",
+                "start2": "10:00", "end2": "11:00",
+            })
+
+        with CometBlue(self.MAC) as blue:
+            result = blue.get_weekday(Weekday.MONDAY)
+            self.assertRegex(str(result), re.compile(
+                r"{'start1': '08:00', 'end1': '09:00', " +
+                r"'start2': '10:00', 'end2': '11:00', " +
+                r"'start3': '00:00', 'end3': '00:00', " +
+                r"'start4': '00:00', 'end4': '00:00'}"
+            ))
+
+    def test_setWeekdayPartialOffset(self):
+        with CometBlue(self.MAC) as blue:
+            blue.set_weekday(Weekday.MONDAY, {
+                "start2": "08:00", "end2": "09:00",
+                "start4": "10:00", "end4": "11:00",
+            })
+
+        with CometBlue(self.MAC) as blue:
+            result = blue.get_weekday(Weekday.MONDAY)
+            self.assertRegex(str(result), re.compile(
+                r"{'start1': '08:00', 'end1': '09:00', " +
+                r"'start2': '10:00', 'end2': '11:00', " +
+                r"'start3': '00:00', 'end3': '00:00', " +
+                r"'start4': '00:00', 'end4': '00:00'}"
+            ))
+
     def test_read_all(self):
         """
         For manual verification

@@ -125,12 +125,18 @@ class AsyncCometBlue:
         :returns int: the Comet Blue representation of the given time, or 0 if invalid
         :rtype: int
         """
+        if value is None:
+            return 0
+
         split = value.split(":")
-        hour = int(split[0]) * 6
-        minutes = int(int(split[1]) / 10)
+        hour = int(split[0])
+        minutes = int(split[1])
 
         if hour not in range(0, 24) or minutes not in range(0, 60):
             return 0
+
+        hour = hour * 6
+        minutes = int(minutes / 10)
 
         return hour + minutes
 
@@ -242,18 +248,29 @@ class AsyncCometBlue:
     def __transform_weekday_request(self, values: dict) -> bytearray:
         """
         Transforms a dictionary containing start1-4 and end1-4 times to a bytearray used by the device.
+        Resets all unused time-"slots".
+        Also moves them to the earliest slot. E.g. setting 2 & 4 will populate slots 1 & 2 and reset 3 & 4.
 
         :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
         :return: bytearray to be transferred to the device
         """
-        start1 = self.__from_time_string(values["start1"])
-        end1 = self.__from_time_string(values["end1"])
-        start2 = self.__from_time_string(values["start2"])
-        end2 = self.__from_time_string(values["end2"])
-        start3 = self.__from_time_string(values["start3"])
-        end3 = self.__from_time_string(values["end3"])
-        start4 = self.__from_time_string(values["start4"])
-        end4 = self.__from_time_string(values["end4"])
+        start1, end1, start2, end2, start3, end3, start4, end4 = 0, 0, 0, 0, 0, 0, 0, 0
+
+        if "start1" in values and "end1" in values:
+            start1 = self.__from_time_string(values["start1"])
+            end1 = self.__from_time_string(values["end1"])
+
+        if "start2" in values and "end2" in values:
+            start2 = self.__from_time_string(values["start2"])
+            end2 = self.__from_time_string(values["end2"])
+
+        if "start2" in values and "end3" in values:
+            start3 = self.__from_time_string(values["start3"])
+            end3 = self.__from_time_string(values["end3"])
+
+        if "start2" in values and "end4" in values:
+            start4 = self.__from_time_string(values["start4"])
+            end4 = self.__from_time_string(values["end4"])
 
         values = []
         if start1 is not None and end1 is not None and start1 != end1:
@@ -657,6 +674,7 @@ class CometBlue(AsyncCometBlue):
         :return: dict with start# and end# values. # = 1-4
         """
         return self.__run_in_loop(self.get_weekday_async(weekday))
+
     def set_weekday(self, weekday: Weekday, values: dict):
         """
         Sets the start and end times for programed heating periods for the given day.
