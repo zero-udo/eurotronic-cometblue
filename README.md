@@ -1,4 +1,6 @@
 # CometBlue
+[![GitHub version](https://badge.fury.io/gh/zero-udo%2Feurotronic-cometblue.svg)](https://badge.fury.io/gh/zero-udo%2Feurotronic-cometblue)
+[![PyPI version](https://badge.fury.io/py/eurotronic-cometblue.svg)](https://badge.fury.io/py/eurotronic-cometblue)
 
 eurotronic-cometblue is a library to communicate with your Eurotronic GmbH Comet Blue radiator controllers.
 
