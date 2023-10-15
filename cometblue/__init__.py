@@ -445,6 +445,20 @@ class AsyncCometBlue:
         new_value = self.__transform_weekday_request(values)
         await self.__write_value(WEEKDAY.get(weekday), new_value)
 
+    async def set_weekdays_async(self, values: dict):
+        """
+        Sets the start and end times for programed heating periods for the given set of days.
+
+        :param values: dict with weekdays as key and values as 
+                       dict of start# and end# values. # = 1-4. Pattern "HH:mm"
+        """
+
+        for input_day in values:
+            if not values[input_day]:
+                continue
+            weekday = Weekday[input_day.upper()]
+            await self.set_weekday_async(weekday, values[input_day])
+
     async def get_holiday_async(self, number: int) -> dict:
         """
         Retrieves the configured holiday 1-8.
