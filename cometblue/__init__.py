@@ -243,15 +243,13 @@ class AsyncCometBlue:
         :return: dict containing start1-4 and end1-4 times
         """
         result = dict()
-        result["start1"] = self.__to_time_str(value[0])
-        result["end1"] = self.__to_time_str(value[1])
-        result["start2"] = self.__to_time_str(value[2])
-        result["end2"] = self.__to_time_str(value[3])
-        result["start3"] = self.__to_time_str(value[4])
-        result["end3"] = self.__to_time_str(value[5])
-        result["start4"] = self.__to_time_str(value[6])
-        result["end4"] = self.__to_time_str(value[7])
-        return {k: v for k, v in result.items() if v}
+        for i in range(1,5):
+            start = self.__to_time_str(value[int(i/2)*2])
+            end = self.__to_time_str(value[int(i/2)*2+1])
+            if start is not None and end is not None and start != end:
+                result[str.format("start{}", i)] = start
+                result[str.format("end{}", i)] = end
+        return result
 
     def __transform_weekday_request(self, values: dict) -> bytearray:
         """
