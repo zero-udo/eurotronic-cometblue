@@ -105,7 +105,7 @@ class AsyncCometBlue:
         return bytearray(pin.to_bytes(4, 'little', signed=False))
 
     @staticmethod
-    def __to_time_str(value: int) -> str:
+    def __to_time_str(value: int) -> Union[str, None]:
         """
         Transforms a Comet Blue time representation to a human-readable time-string.
 
@@ -113,11 +113,13 @@ class AsyncCometBlue:
         :return:
         """
         hour = int(value / 6)
+        if hour >= 24:
+            return None
         minutes = int(value % 6) * 10
         return str.format("{0:02d}:{1:02d}", hour, minutes)
 
     @staticmethod
-    def __from_time_string(value: str) -> int:
+    def __from_time_string(value: Union[str, None]) -> int:
         """
         Transforms a time-string to the Comet Blue byte representation.
 
@@ -235,7 +237,7 @@ class AsyncCometBlue:
 
     def __transform_weekday_response(self, value: bytearray) -> dict:
         """
-        Transforms a weekday response to a dictionary containing all four start and end times.
+        Transforms a weekday response to a dictionary containing all non-empty start and end times.
 
         :param value: bytearray retrieved from the device
         :return: dict containing start1-4 and end1-4 times
@@ -249,7 +251,7 @@ class AsyncCometBlue:
         result["end3"] = self.__to_time_str(value[5])
         result["start4"] = self.__to_time_str(value[6])
         result["end4"] = self.__to_time_str(value[7])
-        return result
+        return {k: v for k, v in result.items() if v}
 
     def __transform_weekday_request(self, values: dict) -> bytearray:
         """
@@ -260,42 +262,25 @@ class AsyncCometBlue:
         :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
         :return: bytearray to be transferred to the device
         """
-        start1, end1, start2, end2, start3, end3, start4, end4 = 0, 0, 0, 0, 0, 0, 0, 0
-
-        if "start1" in values and "end1" in values:
-            start1 = self.__from_time_string(values["start1"])
-            end1 = self.__from_time_string(values["end1"])
-
-        if "start2" in values and "end2" in values:
-            start2 = self.__from_time_string(values["start2"])
-            end2 = self.__from_time_string(values["end2"])
-
-        if "start2" in values and "end3" in values:
-            start3 = self.__from_time_string(values["start3"])
-            end3 = self.__from_time_string(values["end3"])
-
-        if "start2" in values and "end4" in values:
-            start4 = self.__from_time_string(values["start4"])
-            end4 = self.__from_time_string(values["end4"])
-
         values = []
-        if start1 is not None and end1 is not None and start1 != end1:
-            values.append(start1)
-            values.append(end1)
-        if start2 is not None and end2 is not None and start2 != end2:
-            values.append(start2)
-            values.append(end2)
-        if start3 is not None and end3 is not None and start3 != end3:
-            values.append(start3)
-            values.append(end3)
-        if start4 is not None and end4 is not None and start4 != end4:
-            values.append(start4)
-            values.append(end4)
 
-        new_value = bytearray(8)
-        for i in range(len(values)):
-            new_value[i] = values[i]
+        if "start1" in values and "end1" in values and values["start1"] != values["end1"]:
+            values.append(self.__from_time_string(values["start1"]))
+            values.append(self.__from_time_string(values["end1"]))
 
+        if "start2" in values and "end2" in values and values["start2"] != values["end2"]:
+            values.append(self.__from_time_string(values["start2"]))
+            values.append(self.__from_time_string(values["end2"]))
+
+        if "start3" in values and "end3" in values and values["start3"] != values["end3"]:
+            values.append(self.__from_time_string(values["start3"]))
+            values.append(self.__from_time_string(values["end3"]))
+
+        if "start4" in values and "end4" in values and values["start4"] != values["end4"]:
+            values.append(self.__from_time_string(values["start4"]))
+            values.append(self.__from_time_string(values["end4"]))
+
+        new_value = bytearray(values + [0] * (8 - len(values)))
         return new_value
 
     @staticmethod
