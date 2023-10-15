@@ -153,7 +153,10 @@ class AsyncCometBlue:
         result["manualTemp"] = value[1] / 2
         result["targetTempLow"] = value[2] / 2
         result["targetTempHigh"] = value[3] / 2
-        result["tempOffset"] = value[4] / 2
+        offset_value = value[4]
+        if offset_value > 127:
+            offset_value = -256 + offset_value
+        result["tempOffset"] = offset_value / 2
         result["windowOpen"] = value[5] == 0xF0
         result["windowOpenMinutes"] = value[6]
 
@@ -187,7 +190,10 @@ class AsyncCometBlue:
             new_value[3] = const.UNCHANGED_VALUE
 
         if values.get("tempOffset") is not None:
-            new_value[4] = int(values.get("tempOffset") * 2)
+            offset_value = values.get("tempOffset")
+            if offset_value < 0:
+                offset_value = 256 + offset_value * 2
+            new_value[4] = int(offset_value)
         else:
             new_value[4] = const.UNCHANGED_VALUE
 
