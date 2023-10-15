@@ -262,26 +262,26 @@ class AsyncCometBlue:
         :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
         :return: bytearray to be transferred to the device
         """
-        values = []
+        new_value = []
 
         if "start1" in values and "end1" in values and values["start1"] != values["end1"]:
-            values.append(self.__from_time_string(values["start1"]))
-            values.append(self.__from_time_string(values["end1"]))
+            new_value.append(self.__from_time_string(values["start1"]))
+            new_value.append(self.__from_time_string(values["end1"]))
 
         if "start2" in values and "end2" in values and values["start2"] != values["end2"]:
-            values.append(self.__from_time_string(values["start2"]))
-            values.append(self.__from_time_string(values["end2"]))
+            new_value.append(self.__from_time_string(values["start2"]))
+            new_value.append(self.__from_time_string(values["end2"]))
 
         if "start3" in values and "end3" in values and values["start3"] != values["end3"]:
-            values.append(self.__from_time_string(values["start3"]))
-            values.append(self.__from_time_string(values["end3"]))
+            new_value.append(self.__from_time_string(values["start3"]))
+            new_value.append(self.__from_time_string(values["end3"]))
 
         if "start4" in values and "end4" in values and values["start4"] != values["end4"]:
-            values.append(self.__from_time_string(values["start4"]))
-            values.append(self.__from_time_string(values["end4"]))
+            new_value.append(self.__from_time_string(values["start4"]))
+            new_value.append(self.__from_time_string(values["end4"]))
 
-        new_value = bytearray(values + [0] * (8 - len(values)))
-        return new_value
+        new_value_bytes = bytearray(new_value + [0] * (8 - len(new_value)))
+        return new_value_bytes
 
     @staticmethod
     def __transform_holiday_response(values: bytearray) -> dict:
@@ -449,12 +449,11 @@ class AsyncCometBlue:
         """
         Sets the start and end times for programed heating periods for the given set of days.
 
-        :param values: dict with weekdays as key and values as 
-                       dict of start# and end# values. # = 1-4. Pattern "HH:mm"
+        :param values: dict with weekdays as key and values as dict of start# and end# values. # = 1-4. Pattern "HH:mm"
         """
 
         for input_day in values:
-            if not values[input_day]:
+            if values[input_day] is None:
                 continue
             weekday = Weekday[input_day.upper()]
             await self.set_weekday_async(weekday, values[input_day])
