@@ -365,9 +365,8 @@ class AsyncCometBlue:
 
         :return:
         """
-        if self.connected:
-            await self.client.disconnect()
-            self.connected = False
+        await self.client.disconnect()
+        self.connected = False
 
     async def get_temperature_async(self) -> dict:
         """Retrieves the temperature configurations from the device.
