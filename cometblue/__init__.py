@@ -355,9 +355,13 @@ class AsyncCometBlue:
                 await self.client.connect()
                 await self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
                 self.connected = True
-            except BleakError:
+            except BleakError as ex:
                 timeout += 2
                 timeout = min(timeout, 2 * self.timeout)
+                tries += 1
+                if tries < 10:
+                    continue
+                raise ex
 
     async def disconnect_async(self):
         """
