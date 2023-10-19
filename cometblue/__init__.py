@@ -3,6 +3,7 @@ import platform
 import re
 from datetime import datetime
 from enum import Enum
+from logging import getLogger
 from typing import Dict, List, Union
 from uuid import UUID
 
@@ -13,6 +14,8 @@ from . import const
 
 MAC_REGEX = re.compile('([0-9A-F]{2}:){5}[0-9A-F]{2}')
 UUID_REGEX = re.compile('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+_LOGGER = getLogger(__name__)
 
 
 class Weekday(Enum):
@@ -54,9 +57,10 @@ class AsyncCometBlue:
     connected: bool
     pin: bytearray
     timeout: int
+    retries: int
     client: BleakClient
 
-    def __init__(self, device: Union[BLEDevice, str], pin=0, timeout=2):
+    def __init__(self, device: Union[BLEDevice, str], pin=0, timeout=2, retries=10):
         if isinstance(device, str):
             if bool(MAC_REGEX.match(device)) is False and platform.system() != "Darwin":
                 raise ValueError(
@@ -72,6 +76,7 @@ class AsyncCometBlue:
         self.device = device
         self.pin = self.transform_pin(pin)
         self.timeout = timeout
+        self.retries = retries
         self.connected = False
 
     async def __read_value(self, characteristic: UUID) -> bytearray:
@@ -349,17 +354,22 @@ class AsyncCometBlue:
         """
         timeout = self.timeout
         tries = 0
-        while not self.connected and tries < 10:
+        while not self.connected and tries < self.retries:
             try:
+                _LOGGER.debug("Setting up device %s", self.device)
                 self.client = BleakClient(self.device, timeout=timeout)
+                _LOGGER.debug("Connecting to %s", self.device)
                 await self.client.connect()
+                _LOGGER.debug("Established connection to %s", self.device)
                 await self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
+                _LOGGER.debug("Connected to %s", self.device)
                 self.connected = True
             except BleakError as ex:
                 timeout += 2
                 timeout = min(timeout, 2 * self.timeout)
                 tries += 1
-                if tries < 10:
+                _LOGGER.debug("Error connecting to %s. Timeout %ss, try %s.", self.device, timeout, tries)
+                if tries < self.retries:
                     continue
                 raise ex
 
