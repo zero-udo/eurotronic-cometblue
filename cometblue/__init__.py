@@ -351,7 +351,7 @@ class AsyncCometBlue:
         tries = 0
         while not self.connected and tries < 10:
             try:
-                self.client = BleakClient(self.device)
+                self.client = BleakClient(self.device, timeout=timeout)
                 await self.client.connect()
                 await self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
                 self.connected = True
