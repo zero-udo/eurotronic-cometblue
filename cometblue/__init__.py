@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from enum import Enum
 from logging import getLogger
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 from uuid import UUID
 
 from bleak import BLEDevice, BleakClient, BleakScanner
@@ -167,6 +167,11 @@ class AsyncCometBlue:
         result["windowOpen"] = value[5] == 0xF0
         result["windowOpenMinutes"] = value[6]
 
+        for k in result:
+            if result[k] < -10 or result[k] > 50:
+                _LOGGER.warning("Removed invalid value %s: %s", k, result[k])
+                result.pop(k)
+
         return result
 
     @staticmethod
@@ -209,7 +214,7 @@ class AsyncCometBlue:
         return new_value
 
     @staticmethod
-    def __transform_datetime_response(value: bytearray) -> datetime:
+    def __transform_datetime_response(value: bytearray) -> Optional[datetime]:
         """
         Transforms a date response to a datetime object.
 
@@ -221,7 +226,11 @@ class AsyncCometBlue:
         day = value[2]
         month = value[3]
         year = value[4] + 2000
-        dt = datetime(year, month, day, hour, minute)
+        try:
+            dt = datetime(year, month, day, hour, minute)
+        except ValueError as ex:
+            _LOGGER.warning("Cannot parse datetime: %s. Received %s", ex, list(value))
+            return None
         return dt
 
     @staticmethod
