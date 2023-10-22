@@ -1,11 +1,11 @@
 import setuptools
 
-with open("README.md", "r") as fh:
+with open("README.md") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="eurotronic-cometblue",
-    version="1.1.1",
+    version="1.1.2dev1",
     author="Johannes Rottler",
     author_email="johannes@rottler.me",
     description="Allows you to access Eurotronic GmbH BLE Comet Blue Radiator Controller",
