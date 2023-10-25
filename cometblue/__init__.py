@@ -187,22 +187,30 @@ class AsyncCometBlue:
         new_value[0] = const.UNCHANGED_VALUE
 
         if values.get("manualTemp") is not None:
+            if not 8 <= values["manualTemp"] <= 28:
+                raise ValueError("Invalid manualTemp: %s", values["manualTemp"])
             new_value[1] = int(values.get("manualTemp") * 2)
         else:
             new_value[2] = const.UNCHANGED_VALUE
 
         if values.get("targetTempLow") is not None:
+            if not 8 <= values["targetTempLow"] <= 28:
+                raise ValueError("Invalid targetTempLow: %s", values["targetTempLow"])
             new_value[2] = int(values.get("targetTempLow") * 2)
         else:
             new_value[2] = const.UNCHANGED_VALUE
 
         if values.get("targetTempHigh") is not None:
+            if not 8 <= values["targetTempHigh"] <= 28:
+                raise ValueError("Invalid targetTempHigh: %s", values["targetTempHigh"])
             new_value[3] = int(values.get("targetTempHigh") * 2)
         else:
             new_value[3] = const.UNCHANGED_VALUE
 
         if values.get("tempOffset") is not None:
-            offset_value = values.get("tempOffset")
+            offset_value = values["tempOffset"]
+            if not -5 <= values["tempOffset"] <= 5:
+                raise ValueError("Invalid tempOffset: %s", values["tempOffset"])
             if offset_value < 0:
                 offset_value = 256 + offset_value * 2
             new_value[4] = int(offset_value)
@@ -276,21 +284,27 @@ class AsyncCometBlue:
         """
         new_value = []
 
-        if "start1" in values and "end1" in values and values["start1"] != values["end1"]:
+        if "start1" in values and "end1" in values and values["start1"] < values["end1"]:
             new_value.append(self.__from_time_string(values["start1"]))
             new_value.append(self.__from_time_string(values["end1"]))
 
-        if "start2" in values and "end2" in values and values["start2"] != values["end2"]:
+        if "start2" in values and "end2" in values and values["start2"] < values["end2"]:
             new_value.append(self.__from_time_string(values["start2"]))
             new_value.append(self.__from_time_string(values["end2"]))
 
-        if "start3" in values and "end3" in values and values["start3"] != values["end3"]:
+        if "start3" in values and "end3" in values and values["start3"] < values["end3"]:
             new_value.append(self.__from_time_string(values["start3"]))
             new_value.append(self.__from_time_string(values["end3"]))
 
-        if "start4" in values and "end4" in values and values["start4"] != values["end4"]:
+        if "start4" in values and "end4" in values and values["start4"] < values["end4"]:
             new_value.append(self.__from_time_string(values["start4"]))
             new_value.append(self.__from_time_string(values["end4"]))
+
+        if len(v for v in values.values() if v) > len(new_value):
+            _LOGGER.warning("Not all values are valid: %s", values)
+
+        if len(new_value) == 0:
+            raise ValueError("No valid values found in %s", values)
 
         new_value_bytes = bytearray(new_value + [0] * (8 - len(new_value)))
         return new_value_bytes
@@ -332,9 +346,8 @@ class AsyncCometBlue:
         :param values: dictionary containing start: datetime, end: datetime, temperature: float
         :return: bytearray to be transferred to the device
         """
-        if not values.__contains__("start") or not values.__contains__("end") or not values.__contains__("temperature"):
-            print("Nope")
-            return bytearray(9)
+        if not set(values).issubset({"start", "end", "temperature"}):
+            raise ValueError("start, end and temperature are required")
 
         start: datetime = values["start"]
         end: datetime = values["end"]
