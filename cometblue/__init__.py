@@ -167,7 +167,7 @@ class AsyncCometBlue:
         result["windowOpen"] = value[5] == 0xF0
         result["windowOpenMinutes"] = value[6]
 
-        for k in result:
+        for k in list(result):
             if result[k] < -10 or result[k] > 50:
                 _LOGGER.warning("Removed invalid value %s: %s", k, result[k])
                 result.pop(k)
