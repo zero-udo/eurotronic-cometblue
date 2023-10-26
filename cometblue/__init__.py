@@ -140,7 +140,7 @@ class AsyncCometBlue:
         minutes = int(split[1])
 
         if hour not in range(0, 24) or minutes not in range(0, 60):
-            return 0
+            raise ValueError(f"Invalid time string: {value}")
 
         hour = hour * 6
         minutes = int(minutes / 10)
@@ -210,7 +210,7 @@ class AsyncCometBlue:
         if values.get("tempOffset") is not None:
             offset_value = values["tempOffset"]
             if not -5 <= values["tempOffset"] <= 5:
-                raise ValueError("Invalid tempOffset: %s", values["tempOffset"])
+                raise ValueError(f"Invalid tempOffset: {values['tempOffset']}")
             if offset_value < 0:
                 offset_value = 256 + offset_value * 2
             new_value[4] = int(offset_value)
