@@ -187,22 +187,22 @@ class AsyncCometBlue:
         new_value[0] = const.UNCHANGED_VALUE
 
         if values.get("manualTemp") is not None:
-            if not 8 <= values["manualTemp"] <= 28:
-                raise ValueError("Invalid manualTemp: %s", values["manualTemp"])
+            if not 7.5 <= values["manualTemp"] <= 28.5:
+                raise ValueError(f"Invalid manualTemp: {values['manualTemp']}")
             new_value[1] = int(values.get("manualTemp") * 2)
         else:
             new_value[2] = const.UNCHANGED_VALUE
 
         if values.get("targetTempLow") is not None:
-            if not 8 <= values["targetTempLow"] <= 28:
-                raise ValueError("Invalid targetTempLow: %s", values["targetTempLow"])
+            if not 7.5 <= values["targetTempLow"] <= 28.5:
+                raise ValueError(f"Invalid targetTempLow: {values['targetTempLow']}")
             new_value[2] = int(values.get("targetTempLow") * 2)
         else:
             new_value[2] = const.UNCHANGED_VALUE
 
         if values.get("targetTempHigh") is not None:
-            if not 8 <= values["targetTempHigh"] <= 28:
-                raise ValueError("Invalid targetTempHigh: %s", values["targetTempHigh"])
+            if not 7.5 <= values["targetTempHigh"] <= 28.5:
+                raise ValueError(f"Invalid targetTempHigh: {values['targetTempHigh']}")
             new_value[3] = int(values.get("targetTempHigh") * 2)
         else:
             new_value[3] = const.UNCHANGED_VALUE
