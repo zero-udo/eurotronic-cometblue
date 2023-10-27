@@ -313,24 +313,30 @@ class AsyncCometBlue:
     def __transform_holiday_response(values: bytearray) -> dict:
         """
         Transforms a retrieved holiday response to a dictionary containing start and end `datetime`s as well as the set
-        temperature.
+        temperature. If start is None, vacation mode is active.
 
         :param values: bytearray retrieved from the device
         :return: dictionary containing start: datetime, end: datetime and temperature: float or empty if bytearray is
         malformed
         """
         # validate values
-        if values[3] not in range(0, 100) or \
-                values[2] not in range(1, 13) or \
-                values[1] not in range(1, 31) or \
-                values[0] not in range(0, 25) or \
-                values[7] not in range(0, 100) or \
-                values[6] not in range(1, 13) or \
-                values[5] not in range(1, 31) or \
-                values[4] not in range(0, 25):
-            return dict()
+        if (
+            values[3] not in range(0, 100)
+            or values[2] not in range(1, 13)
+            or values[1] not in range(1, 31)
+            or (values[0] not in range(0, 25) or values[0] == 128)
+            or values[7] not in range(0, 100)
+            or values[6] not in range(1, 13)
+            or values[5] not in range(1, 31)
+            or values[4] not in range(0, 25)
+        ):
+            return {}
 
-        start = datetime(values[3] + 2000, values[2], values[1], values[0])
+        # If vacation mode has started, the hour values is 64, so we set start to None
+        if values[0] == 128:
+            start = None
+        else:
+            start = datetime(values[3] + 2000, values[2], values[1], values[0])
         end = datetime(values[7] + 2000, values[6], values[5], values[4])
         temperature = values[8] / 2
         result = {"start": start, "end": end, "temperature": temperature}
