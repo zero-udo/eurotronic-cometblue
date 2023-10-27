@@ -304,7 +304,7 @@ class AsyncCometBlue:
             _LOGGER.warning("Not all values are valid: %s", values)
 
         if len(new_value) == 0:
-            raise ValueError("No valid values found in %s", values)
+            raise ValueError(f"No valid values found in {values}")
 
         new_value_bytes = bytearray(new_value + [0] * (8 - len(new_value)))
         return new_value_bytes
