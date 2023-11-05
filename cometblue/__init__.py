@@ -300,11 +300,8 @@ class AsyncCometBlue:
             new_value.append(self.__from_time_string(values["start4"]))
             new_value.append(self.__from_time_string(values["end4"]))
 
-        if len(v for v in values.values() if v) > len(new_value):
+        if len([v for v in values.values() if v]) > len(new_value):
             _LOGGER.warning("Not all values are valid: %s", values)
-
-        if len(new_value) == 0:
-            raise ValueError(f"No valid values found in {values}")
 
         new_value_bytes = bytearray(new_value + [0] * (8 - len(new_value)))
         return new_value_bytes
@@ -482,6 +479,8 @@ class AsyncCometBlue:
         """
 
         new_value = self.__transform_weekday_request(values)
+        if new_value == bytearray([0]*8):
+            _LOGGER.warning("Setting empty schedule for %s", weekday)
         await self.__write_value(WEEKDAY.get(weekday), new_value)
 
     async def set_weekdays_async(self, values: dict):
