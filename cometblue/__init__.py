@@ -3,7 +3,8 @@ import platform
 import re
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Union
+from logging import getLogger
+from typing import Dict, List, Optional, Union
 from uuid import UUID
 
 from bleak import BLEDevice, BleakClient, BleakScanner
@@ -13,6 +14,8 @@ from . import const
 
 MAC_REGEX = re.compile('([0-9A-F]{2}:){5}[0-9A-F]{2}')
 UUID_REGEX = re.compile('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
+_LOGGER = getLogger(__name__)
 
 
 class Weekday(Enum):
@@ -54,9 +57,10 @@ class AsyncCometBlue:
     connected: bool
     pin: bytearray
     timeout: int
+    retries: int
     client: BleakClient
 
-    def __init__(self, device: Union[BLEDevice, str], pin=0, timeout=2):
+    def __init__(self, device: Union[BLEDevice, str], pin=0, timeout=2, retries=10):
         if isinstance(device, str):
             if bool(MAC_REGEX.match(device)) is False and platform.system() != "Darwin":
                 raise ValueError(
@@ -72,6 +76,7 @@ class AsyncCometBlue:
         self.device = device
         self.pin = self.transform_pin(pin)
         self.timeout = timeout
+        self.retries = retries
         self.connected = False
 
     async def __read_value(self, characteristic: UUID) -> bytearray:
@@ -105,7 +110,7 @@ class AsyncCometBlue:
         return bytearray(pin.to_bytes(4, 'little', signed=False))
 
     @staticmethod
-    def __to_time_str(value: int) -> str:
+    def __to_time_str(value: int) -> Union[str, None]:
         """
         Transforms a Comet Blue time representation to a human-readable time-string.
 
@@ -113,11 +118,13 @@ class AsyncCometBlue:
         :return:
         """
         hour = int(value / 6)
+        if hour >= 24:
+            return None
         minutes = int(value % 6) * 10
         return str.format("{0:02d}:{1:02d}", hour, minutes)
 
     @staticmethod
-    def __from_time_string(value: str) -> int:
+    def __from_time_string(value: Union[str, None]) -> int:
         """
         Transforms a time-string to the Comet Blue byte representation.
 
@@ -133,7 +140,7 @@ class AsyncCometBlue:
         minutes = int(split[1])
 
         if hour not in range(0, 24) or minutes not in range(0, 60):
-            return 0
+            raise ValueError(f"Invalid time string: {value}")
 
         hour = hour * 6
         minutes = int(minutes / 10)
@@ -153,9 +160,17 @@ class AsyncCometBlue:
         result["manualTemp"] = value[1] / 2
         result["targetTempLow"] = value[2] / 2
         result["targetTempHigh"] = value[3] / 2
-        result["tempOffset"] = value[4] / 2
+        offset_value = value[4]
+        if offset_value > 127:
+            offset_value = -256 + offset_value
+        result["tempOffset"] = offset_value / 2
         result["windowOpen"] = value[5] == 0xF0
         result["windowOpenMinutes"] = value[6]
+
+        for k in list(result):
+            if result[k] < -10 or result[k] > 50:
+                _LOGGER.warning("Removed invalid value %s: %s", k, result[k])
+                result.pop(k)
 
         return result
 
@@ -172,22 +187,33 @@ class AsyncCometBlue:
         new_value[0] = const.UNCHANGED_VALUE
 
         if values.get("manualTemp") is not None:
+            if not 7.5 <= values["manualTemp"] <= 28.5:
+                raise ValueError(f"Invalid manualTemp: {values['manualTemp']}")
             new_value[1] = int(values.get("manualTemp") * 2)
         else:
             new_value[2] = const.UNCHANGED_VALUE
 
         if values.get("targetTempLow") is not None:
+            if not 7.5 <= values["targetTempLow"] <= 28.5:
+                raise ValueError(f"Invalid targetTempLow: {values['targetTempLow']}")
             new_value[2] = int(values.get("targetTempLow") * 2)
         else:
             new_value[2] = const.UNCHANGED_VALUE
 
         if values.get("targetTempHigh") is not None:
+            if not 7.5 <= values["targetTempHigh"] <= 28.5:
+                raise ValueError(f"Invalid targetTempHigh: {values['targetTempHigh']}")
             new_value[3] = int(values.get("targetTempHigh") * 2)
         else:
             new_value[3] = const.UNCHANGED_VALUE
 
         if values.get("tempOffset") is not None:
-            new_value[4] = int(values.get("tempOffset") * 2)
+            offset_value = values["tempOffset"]
+            if not -5 <= values["tempOffset"] <= 5:
+                raise ValueError(f"Invalid tempOffset: {values['tempOffset']}")
+            if offset_value < 0:
+                offset_value = 256 + offset_value * 2
+            new_value[4] = int(offset_value)
         else:
             new_value[4] = const.UNCHANGED_VALUE
 
@@ -196,7 +222,7 @@ class AsyncCometBlue:
         return new_value
 
     @staticmethod
-    def __transform_datetime_response(value: bytearray) -> datetime:
+    def __transform_datetime_response(value: bytearray) -> Optional[datetime]:
         """
         Transforms a date response to a datetime object.
 
@@ -208,7 +234,11 @@ class AsyncCometBlue:
         day = value[2]
         month = value[3]
         year = value[4] + 2000
-        dt = datetime(year, month, day, hour, minute)
+        try:
+            dt = datetime(year, month, day, hour, minute)
+        except ValueError as ex:
+            _LOGGER.warning("Cannot parse datetime: %s. Received %s", ex, list(value))
+            return None
         return dt
 
     @staticmethod
@@ -229,20 +259,18 @@ class AsyncCometBlue:
 
     def __transform_weekday_response(self, value: bytearray) -> dict:
         """
-        Transforms a weekday response to a dictionary containing all four start and end times.
+        Transforms a weekday response to a dictionary containing all non-empty start and end times.
 
         :param value: bytearray retrieved from the device
         :return: dict containing start1-4 and end1-4 times
         """
         result = dict()
-        result["start1"] = self.__to_time_str(value[0])
-        result["end1"] = self.__to_time_str(value[1])
-        result["start2"] = self.__to_time_str(value[2])
-        result["end2"] = self.__to_time_str(value[3])
-        result["start3"] = self.__to_time_str(value[4])
-        result["end3"] = self.__to_time_str(value[5])
-        result["start4"] = self.__to_time_str(value[6])
-        result["end4"] = self.__to_time_str(value[7])
+        for i in range(1,5):
+            start = self.__to_time_str(value[int(i/2)*2])
+            end = self.__to_time_str(value[int(i/2)*2+1])
+            if start is not None and end is not None and start != end:
+                result[str.format("start{}", i)] = start
+                result[str.format("end{}", i)] = end
         return result
 
     def __transform_weekday_request(self, values: dict) -> bytearray:
@@ -254,66 +282,58 @@ class AsyncCometBlue:
         :param values: dict with start# and end# values. # = 1-4. Pattern "HH:mm"
         :return: bytearray to be transferred to the device
         """
-        start1, end1, start2, end2, start3, end3, start4, end4 = 0, 0, 0, 0, 0, 0, 0, 0
+        new_value = []
 
-        if "start1" in values and "end1" in values:
-            start1 = self.__from_time_string(values["start1"])
-            end1 = self.__from_time_string(values["end1"])
+        if "start1" in values and "end1" in values and values["start1"] < values["end1"]:
+            new_value.append(self.__from_time_string(values["start1"]))
+            new_value.append(self.__from_time_string(values["end1"]))
 
-        if "start2" in values and "end2" in values:
-            start2 = self.__from_time_string(values["start2"])
-            end2 = self.__from_time_string(values["end2"])
+        if "start2" in values and "end2" in values and values["start2"] < values["end2"]:
+            new_value.append(self.__from_time_string(values["start2"]))
+            new_value.append(self.__from_time_string(values["end2"]))
 
-        if "start2" in values and "end3" in values:
-            start3 = self.__from_time_string(values["start3"])
-            end3 = self.__from_time_string(values["end3"])
+        if "start3" in values and "end3" in values and values["start3"] < values["end3"]:
+            new_value.append(self.__from_time_string(values["start3"]))
+            new_value.append(self.__from_time_string(values["end3"]))
 
-        if "start2" in values and "end4" in values:
-            start4 = self.__from_time_string(values["start4"])
-            end4 = self.__from_time_string(values["end4"])
+        if "start4" in values and "end4" in values and values["start4"] < values["end4"]:
+            new_value.append(self.__from_time_string(values["start4"]))
+            new_value.append(self.__from_time_string(values["end4"]))
 
-        values = []
-        if start1 is not None and end1 is not None and start1 != end1:
-            values.append(start1)
-            values.append(end1)
-        if start2 is not None and end2 is not None and start2 != end2:
-            values.append(start2)
-            values.append(end2)
-        if start3 is not None and end3 is not None and start3 != end3:
-            values.append(start3)
-            values.append(end3)
-        if start4 is not None and end4 is not None and start4 != end4:
-            values.append(start4)
-            values.append(end4)
+        if len([v for v in values.values() if v]) > len(new_value):
+            _LOGGER.warning("Not all values are valid: %s", values)
 
-        new_value = bytearray(8)
-        for i in range(len(values)):
-            new_value[i] = values[i]
-
-        return new_value
+        new_value_bytes = bytearray(new_value + [0] * (8 - len(new_value)))
+        return new_value_bytes
 
     @staticmethod
     def __transform_holiday_response(values: bytearray) -> dict:
         """
         Transforms a retrieved holiday response to a dictionary containing start and end `datetime`s as well as the set
-        temperature.
+        temperature. If start is None, vacation mode is active.
 
         :param values: bytearray retrieved from the device
         :return: dictionary containing start: datetime, end: datetime and temperature: float or empty if bytearray is
         malformed
         """
         # validate values
-        if values[3] not in range(0, 100) or \
-                values[2] not in range(1, 13) or \
-                values[1] not in range(1, 31) or \
-                values[0] not in range(0, 25) or \
-                values[7] not in range(0, 100) or \
-                values[6] not in range(1, 13) or \
-                values[5] not in range(1, 31) or \
-                values[4] not in range(0, 25):
-            return dict()
+        if (
+            values[3] not in range(0, 100)
+            or values[2] not in range(1, 13)
+            or values[1] not in range(1, 31)
+            or (values[0] not in range(0, 25) or values[0] == 128)
+            or values[7] not in range(0, 100)
+            or values[6] not in range(1, 13)
+            or values[5] not in range(1, 31)
+            or values[4] not in range(0, 25)
+        ):
+            return {}
 
-        start = datetime(values[3] + 2000, values[2], values[1], values[0])
+        # If vacation mode has started, the hour values is 64, so we set start to None
+        if values[0] == 128:
+            start = None
+        else:
+            start = datetime(values[3] + 2000, values[2], values[1], values[0])
         end = datetime(values[7] + 2000, values[6], values[5], values[4])
         temperature = values[8] / 2
         result = {"start": start, "end": end, "temperature": temperature}
@@ -329,9 +349,8 @@ class AsyncCometBlue:
         :param values: dictionary containing start: datetime, end: datetime, temperature: float
         :return: bytearray to be transferred to the device
         """
-        if not values.__contains__("start") or not values.__contains__("end") or not values.__contains__("temperature"):
-            print("Nope")
-            return bytearray(9)
+        if not set(values).issubset({"start", "end", "temperature"}):
+            raise ValueError("start, end and temperature are required")
 
         start: datetime = values["start"]
         end: datetime = values["end"]
@@ -360,15 +379,24 @@ class AsyncCometBlue:
         """
         timeout = self.timeout
         tries = 0
-        while not self.connected and tries < 10:
+        while not self.connected and tries < self.retries:
             try:
-                self.client = BleakClient(self.device)
+                _LOGGER.debug("Setting up device %s", self.device)
+                self.client = BleakClient(self.device, timeout=timeout)
+                _LOGGER.debug("Connecting to %s", self.device)
                 await self.client.connect()
+                _LOGGER.debug("Established connection to %s", self.device)
                 await self.__write_value(const.CHARACTERISTIC_PIN, self.pin)
+                _LOGGER.debug("Connected to %s", self.device)
                 self.connected = True
-            except BleakError:
+            except BleakError as ex:
                 timeout += 2
                 timeout = min(timeout, 2 * self.timeout)
+                tries += 1
+                _LOGGER.debug("Error connecting to %s. Timeout %ss, try %s.", self.device, timeout, tries)
+                if tries < self.retries:
+                    continue
+                raise ex
 
     async def disconnect_async(self):
         """
@@ -376,9 +404,8 @@ class AsyncCometBlue:
 
         :return:
         """
-        if self.connected:
-            await self.client.disconnect()
-            self.connected = False
+        await self.client.disconnect()
+        self.connected = False
 
     async def get_temperature_async(self) -> dict:
         """Retrieves the temperature configurations from the device.
@@ -452,7 +479,22 @@ class AsyncCometBlue:
         """
 
         new_value = self.__transform_weekday_request(values)
+        if new_value == bytearray([0]*8):
+            _LOGGER.warning("Setting empty schedule for %s", weekday)
         await self.__write_value(WEEKDAY.get(weekday), new_value)
+
+    async def set_weekdays_async(self, values: dict):
+        """
+        Sets the start and end times for programed heating periods for the given set of days.
+
+        :param values: dict with weekdays as key and values as dict of start# and end# values. # = 1-4. Pattern "HH:mm"
+        """
+
+        for input_day in values:
+            if values[input_day] is None:
+                continue
+            weekday = Weekday[input_day.upper()]
+            await self.set_weekday_async(weekday, values[input_day])
 
     async def get_holiday_async(self, number: int) -> dict:
         """
